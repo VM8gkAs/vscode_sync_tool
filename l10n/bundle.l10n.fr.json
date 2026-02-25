@@ -21,6 +21,7 @@
   "Generally used for frontend deployment code; effective only if distPath has a single path": "Généralement utilisé pour le code de déploiement front - end ; n'est efficace que si 'distPath' a un seul chemin",
   "Is this the default configuration": "Est - ce la configuration par défaut ?",
   "Used for right - click upload and remote file comparison": "Utilisé pour le téléversement par clic droit et la comparaison de fichiers distants",
+  "Used for right-click upload and remote file comparison": "Utilisé pour le téléversement par clic droit et la comparaison de fichiers distants",
   "Please select configuration (checked is true, unchecked is false)": "Veuillez sélectionner la configuration (cochez pour 'true', décochez pour 'false')",
   "sync_config.jsonc configuration file format error!": "Erreur de format dans le fichier de configuration 'sync_config.jsonc' !",
   "Configuration file created: sync_config.jsonc": "Fichier de configuration créé : 'sync_config.jsonc'",
@@ -28,6 +29,7 @@
   "Git commit failed, please commit manually": "Le commit Git a échoué, veuillez le faire manuellement",
   "No git commit information was entered": "Aucune information de commit Git n'a été entrée !",
   "Commit message cannot be empty, please re - enter!": "Le message de commit ne peut pas être vide, veuillez le réécrire !",
+  "Commit message cannot be empty, please re-enter!": "Le message de commit ne peut pas être vide, veuillez le réécrire !",
   "Got it": "Compris",
   "Please configure server protocol type [type], e.g., ftp, sftp, ssh": "Veuillez configurer le type de protocole du serveur [type], par exemple, ftp, sftp, ssh",
   "Please configure server address [host]": "Veuillez configurer l'adresse du serveur [host]",
@@ -49,7 +51,9 @@
   "Local file {0} does not exist": "Le fichier local {0} n'existe pas",
   "Please enter a new": "Veuillez entrer un nouveau",
   "Please enter the new permission range 000 - 777,": "Veuillez entrer la nouvelle plage de permissions 000 - 777",
+  "Please enter the new permission range 000-777,": "Veuillez entrer la nouvelle plage de permissions 000 - 777",
   "Permission error, permission range should be: 000 - 777": "Erreur de permissions, la plage de permissions doit être : 000 - 777",
+  "Permission error, permission range should be: 000-777": "Erreur de permissions, la plage de permissions doit être : 000 - 777",
   "Are you sure you want to delete {0}?": "Êtes - vous sûr de vouloir supprimer {0} ?",
   "Please set the default configuration first: {default: true}": "Veuillez configurer d'abord la configuration par défaut : {default: true}",
   "Default configuration {default: true} cannot exceed 1": "La configuration par défaut {default: true} ne peut pas dépasser 1",
@@ -85,5 +89,8 @@
   "theEncryptedDataCannotBeEmpty": "Les données chiffrées ne peuvent pas être vides !",
   "theSecretKeyFileDoesNotExist": "Le fichier secretKey n'existe pas, veuillez vérifier !",
   "thePluginHasExpiredPleaseDownloadTheLatestVersion": "Le plugin a expiré, veuillez télécharger la dernière version !",
-  "noFilesThatNeedToBeCompressed": "Aucun fichier nécessitant une compression n'a été détecté. Veuillez vérifier si la configuration de téléchargement est correcte !"
+  "noFilesThatNeedToBeCompressed": "Aucun fichier nécessitant une compression n'a été détecté. Veuillez vérifier si la configuration de téléchargement est correcte !",
+  "FTP only supports password authentication. Please configure [password]": "FTP ne prend en charge que l’authentification par mot de passe. Veuillez configurer [password]",
+  "The configured [privateKeyPath] does not exist, and [password] is empty. Please provide a valid private key file or password": "Le [privateKeyPath] configuré n'existe pas et [password] est vide. Veuillez fournir un fichier de clé privée valide ou un mot de passe",
+  "Please configure authentication: [privateKeyPath] (preferred) or [password]": "Veuillez configurer l'authentification : [privateKeyPath] (prioritaire) ou [password]"
 }

@@ -68,6 +68,7 @@
   "No changed files in watch mode": "監視モードでは変更されたファイルがありません",
   "Failed to execute packaging script: ": "パッケージ化スクリプトの実行に失敗しました：",
   "Packaging error": "パッケージ化エラー：",
+  "Packaging error:": "パッケージ化エラー：",
   "Remote file does not exist": "リモートファイルが存在しません",
   "Retry": "再試行",
   "All tasks completed": "すべてのタスクが完了しました",
@@ -85,5 +86,8 @@
   "theEncryptedDataCannotBeEmpty": "暗号化されたデータは空にできません！",
   "theSecretKeyFileDoesNotExist": "secretKeyファイルが存在しません。確認してください！",
   "thePluginHasExpiredPleaseDownloadTheLatestVersion": "プラグインが期限切れです。最新版をダウンロードしてください！",
-  "noFilesThatNeedToBeCompressed": "圧縮が必要なファイルが検出されませんでした。アップロード設定が正しいか確認してください！"
+  "noFilesThatNeedToBeCompressed": "圧縮が必要なファイルが検出されませんでした。アップロード設定が正しいか確認してください！",
+  "FTP only supports password authentication. Please configure [password]": "FTP はパスワード認証のみをサポートします。[password] を設定してください",
+  "The configured [privateKeyPath] does not exist, and [password] is empty. Please provide a valid private key file or password": "設定された [privateKeyPath] が存在せず、[password] は空です。有効な秘密鍵ファイルまたはパスワードを指定してください",
+  "Please configure authentication: [privateKeyPath] (preferred) or [password]": "認証情報を設定してください: [privateKeyPath]（優先）または [password]"
 }

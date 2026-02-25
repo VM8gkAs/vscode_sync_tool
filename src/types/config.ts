@@ -48,6 +48,9 @@ export interface DeployConfigItem {
     distPath?: string | string[]; // 本地需要上传的目录，支持字符串或数组，默认上传根目录
     upload_to_root?: boolean //上传到根目录
     deleteRemote?: boolean; // 上传前是否删除远程文件
+    syncFileTime?: boolean; // 上传后是否同步远程文件时间，默认false
+    skipIfSameSize?: boolean; // 上传前检查远程文件大小和时间，相同则跳过，默认true
+    uploadDelay?: number; // 最后一次修改后延迟上传秒数（防抖），默认0（即时）
     remotePath: string; // 上传服务器地址  
     excludePath?: string | string[]; //  排除的上传文件及目录
     downloadPath?: string; //  (非必填) 下载路径，默认为当前项目根目录，手动下载文件、文件夹时使用，可以指定下载地址

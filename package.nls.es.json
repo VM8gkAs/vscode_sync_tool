@@ -29,7 +29,7 @@
     "SyncTools.clearCache": "Borrar caché de watch actual",
     "SyncTools.clearAllCache": "Borrar todas las cachés de watch",
     "SyncTools.confirmMoveOrUpload": "¿Se debe confirmar al mover o subir archivos en la vista del cliente?",
-    "SyncTools.config_desc": "No hay configuración aún. Consulte [Instrucciones de configuración](https://github.com/oorzc/vscode_sync_tool/blob/main/lang/es.md).\n[Agregar configuración](command:sync_tools.addConfig)",
+    "SyncTools.config_desc": "No hay configuración aún. Consulte [Instrucciones de configuración](https://github.com/oorzc/vscode_sync_tool/blob/main/docs/i18n/README.es.md).\n[Agregar configuración](command:sync_tools.addConfig)",
     "SyncTools.gitignore.description": "¿Utilizar el archivo de configuración .gitignore para ignorar el contenido de la subida? Valor predeterminado: true",
     "SyncTools.excludePath.description": "Archivos o carpetas que no se suben por defecto",
     "SyncTools.logShow": "¿Mostrar registros en tiempo real? Valor predeterminado: true",

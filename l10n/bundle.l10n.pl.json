@@ -85,5 +85,8 @@
   "theEncryptedDataCannotBeEmpty": "Zaszyfrowane dane nie mogą być puste!",
   "theSecretKeyFileDoesNotExist": "Plik secretKey nie istnieje, proszę sprawdzić!",
   "thePluginHasExpiredPleaseDownloadTheLatestVersion": "Wtyczka wygasła, pobierz najnowszą wersję!",
-  "noFilesThatNeedToBeCompressed": "Nie wykryto plików wymagających kompresji. Sprawdź, czy konfiguracja przesyłania jest poprawna!"
+  "noFilesThatNeedToBeCompressed": "Nie wykryto plików wymagających kompresji. Sprawdź, czy konfiguracja przesyłania jest poprawna!",
+  "FTP only supports password authentication. Please configure [password]": "FTP obsługuje tylko uwierzytelnianie hasłem. Skonfiguruj [password]",
+  "The configured [privateKeyPath] does not exist, and [password] is empty. Please provide a valid private key file or password": "Skonfigurowany [privateKeyPath] nie istnieje, a [password] jest pusty. Podaj prawidłowy plik klucza prywatnego lub hasło",
+  "Please configure authentication: [privateKeyPath] (preferred) or [password]": "Skonfiguruj uwierzytelnianie: [privateKeyPath] (preferowane) lub [password]"
 }

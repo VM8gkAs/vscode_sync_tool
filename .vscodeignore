@@ -1,19 +1,36 @@
+# common
+.idea/**
+**/__pycache__/**
+*.py[cod]
+.DS_Store
+Thumbs.db
+
+# workspace/dev only
 .vscode/**
 .vscode-test/**
+
+# build/source/deps
 build/**
 src/**
-lang/**
 node_modules/**
+
+# package artifacts
+*.vsix
+*-lock.yaml
+
+# metadata/docs/dev files
 dist/extension.js.map
 dist/extension.js.LICENSE.txt
 .gitignore
 DOC.md
 patches
-vsc-extension-quickstart.md
+**/vsc-extension-quickstart.md
+
+# config/source maps
 **/tsconfig.json
 **/.eslintrc.json
 **/*.map
 **/*.ts
+
+# project-specific extras
 doc.km
-*-lock.yaml
-*.vsix

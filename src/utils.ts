@@ -4,7 +4,6 @@ import * as vscode from "vscode"
 import { l10n } from "vscode"
 import stripJsonComments from "strip-json-comments"
 import { DeployConfigItem, FileTransferConfigItem, Permissions } from "./types/config"
-import lang from "./config/lang"
 // 默认配置
 import { configText, getExampleText } from "./config/default"
 // jsonc处理
@@ -16,7 +15,6 @@ import dayjs = require("dayjs")
 
 
 const { exec } = require("child_process")
-let systemLang: any = lang
 
 export function sleep(ms: number = 1000) {
 	return new Promise(resolve => setTimeout(resolve, ms));
@@ -99,21 +97,6 @@ export function getRootPath(file: string = ""): string {
 	// } else {
 	// 	return ""
 	// }
-}
-
-/**
- * 语言字符
- */
-export const getLang = (lang: string, param: any = []) => {
-	if (vscode.env.language == "zh-cn") {
-		return vscode.l10n.t(lang, param)
-	} else {
-		if (systemLang[lang]) {
-			return vscode.l10n.t(systemLang[lang], param)
-		} else {
-			return vscode.l10n.t(lang, param)
-		}
-	}
 }
 
 /**
@@ -461,6 +444,15 @@ async function selectConfig(jsonText: string) {
 	}
 
 	setDefaultConfig(configJson, clientType);
+	if (configJson.syncFileTime === undefined) {
+		configJson.syncFileTime = false
+	}
+	if (configJson.skipIfSameSize === undefined) {
+		configJson.skipIfSameSize = true
+	}
+	if (configJson.uploadDelay === undefined) {
+		configJson.uploadDelay = 0
+	}
 
 	if (clientType == 'ftp') {
 		delete configJson.remotePath
@@ -610,6 +602,15 @@ export async function getUserConfig(
 					}
 
 					setDefaultConfig(res[v], res[v].type);
+					if (res[v].syncFileTime === undefined) {
+						res[v].syncFileTime = false
+					}
+					if (res[v].skipIfSameSize === undefined) {
+						res[v].skipIfSameSize = true
+					}
+					if (res[v].uploadDelay === undefined) {
+						res[v].uploadDelay = 0
+					}
 				}
 
 				if (res[v].remotePath) {
@@ -637,7 +638,7 @@ export async function getUserConfig(
 	}
 }
 
-function setDefaultConfig(config: { [x: string]: boolean }, type: string) {
+function setDefaultConfig(config: { [x: string]: boolean | number }, type: string) {
 	const properties = ['remote_unpacked', 'delete_remote_compress', 'delete_local_compress'];
 
 	properties.forEach(prop => {
@@ -645,6 +646,16 @@ function setDefaultConfig(config: { [x: string]: boolean }, type: string) {
 			config[prop] = type === 'ssh';
 		}
 	});
+
+	if (config['syncFileTime'] === undefined) {
+		config['syncFileTime'] = false
+	}
+	if (config['skipIfSameSize'] === undefined) {
+		config['skipIfSameSize'] = true
+	}
+	if (config['uploadDelay'] === undefined) {
+		config['uploadDelay'] = 0
+	}
 }
 
 // 检测git是否提交
@@ -782,8 +793,18 @@ export const verityConfig = async (config: DeployConfigItem) => {
 	if (!username) {
 		throw new Error(l10n.t('Please configure username [username]'))
 	}
-	if (type == 'ftp' && !password && !privateKeyPath) {
-		throw new Error(l10n.t('Please configure server password or key file path'))
+	const hasPassword = Boolean(password)
+	const hasPrivateKeyPath = Boolean(privateKeyPath)
+	const privateKeyExists = hasPrivateKeyPath ? fs.existsSync(privateKeyPath as string) : false
+
+	if (type == 'ftp' && !password) {
+		throw new Error(l10n.t('FTP only supports password authentication. Please configure [password]'))
+	}
+	if (type != 'ftp' && hasPrivateKeyPath && !privateKeyExists && !hasPassword) {
+		throw new Error(l10n.t('The configured [privateKeyPath] does not exist, and [password] is empty. Please provide a valid private key file or password'))
+	}
+	if (type != 'ftp' && !hasPassword && !hasPrivateKeyPath) {
+		throw new Error(l10n.t('Please configure authentication: [privateKeyPath] (preferred) or [password]'))
 	}
 	if (type != 'ftp' && !remotePath) {
 		throw new Error(l10n.t('Please configure server file directory [remotePath]'))

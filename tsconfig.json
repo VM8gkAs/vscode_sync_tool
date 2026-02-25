@@ -16,6 +16,7 @@
 		"allowSyntheticDefaultImports": true,
 		"experimentalDecorators": true,
 		"emitDecoratorMetadata": true,
+		"skipLibCheck": true,
 		"declarationDir": "types",
 		"outDir": "lib",
 		"typeRoots": [

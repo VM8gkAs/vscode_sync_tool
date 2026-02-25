@@ -29,7 +29,7 @@
   "SyncTools.clearCache": "Clear Current Watch Cache",
   "SyncTools.clearAllCache": "Clear All Watch Caches",
   "SyncTools.confirmMoveOrUpload": "Whether to confirm when moving or uploading files in the client view",
-  "SyncTools.config_desc": "No configuration yet. Please refer to [Configuration Instructions](https://github.com/oorzc/vscode_sync_tool/blob/main/lang/en.md).\n[Add Configuration](command:sync_tools.addConfig)",
+  "SyncTools.config_desc": "No configuration yet. Please refer to [Configuration Instructions](https://github.com/oorzc/vscode_sync_tool/blob/main/docs/i18n/README.en.md).\n[Add Configuration](command:sync_tools.addConfig)",
   "SyncTools.gitignore.description": "Whether to use the .gitignore configuration file to ignore upload content, default is true",
   "SyncTools.excludePath.description": "Files or folders that are not uploaded by default",
   "SyncTools.logShow": "Whether to display logs in real-time, default is true",

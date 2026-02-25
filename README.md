@@ -1,26 +1,23 @@
-# FTP/SFTP/SSH Sync 
+﻿# FTP/SFTP/SSH Sync 
 
 > A tool for rapid code synchronization
 
 [🔥 Download Link](https://marketplace.visualstudio.com/items?itemName=oorzc.ssh-tools)
 
-## 🎉 Supported Languages
+## Supported Languages
 
-<h3 align="center">
-    <a target="_blank" href="https://github.com/oorzc/vscode_sync_tool/blob/main/lang/en.md">English</a> |
-    <a target="_blank" href="https://github.com/oorzc/vscode_sync_tool/blob/main/lang/zh.md">简体中文</a> |
-    <a target="_blank" href="https://github.com/oorzc/vscode_sync_tool/blob/main/lang/zh-tw.md">繁体中文</a> |
-    <a target="_blank" href="https://github.com/oorzc/vscode_sync_tool/blob/main/lang/es.md">Español</a> |
-    <a target="_blank" href="https://github.com/oorzc/vscode_sync_tool/blob/main/lang/fr.md">Français</a> |
-    <a target="_blank" href="https://github.com/oorzc/vscode_sync_tool/blob/main/lang/de.md">Deutsch</a> |
-    <a target="_blank" href="https://github.com/oorzc/vscode_sync_tool/blob/main/lang/it.md">Italiano</a> |
-    <a target="_blank" href="https://github.com/oorzc/vscode_sync_tool/blob/main/lang/ko.md">한국어</a> |
-    <a target="_blank" href="https://github.com/oorzc/vscode_sync_tool/blob/main/lang/pt.md">Português</a> |
-    <a target="_blank" href="https://github.com/oorzc/vscode_sync_tool/blob/main/lang/ru.md">Pусский</a> |
-    <a target="_blank" href="https://github.com/oorzc/vscode_sync_tool/blob/main/lang/tr.md">Türkçe</a> |
-    <a target="_blank" href="https://github.com/oorzc/vscode_sync_tool/blob/main/lang/pl.md">Polski</a> |
-    <a target="_blank" href="https://github.com/oorzc/vscode_sync_tool/blob/main/lang/ja.md">日本語</a> 
-</h3>
+- [简体中文](docs/i18n/README.zh-CN.md)
+- [繁體中文](docs/i18n/README.zh-TW.md)
+- [Español](docs/i18n/README.es.md)
+- [Français](docs/i18n/README.fr.md)
+- [Deutsch](docs/i18n/README.de.md)
+- [Italiano](docs/i18n/README.it.md)
+- [한국어](docs/i18n/README.ko.md)
+- [Português](docs/i18n/README.pt.md)
+- [Pусский](docs/i18n/README.ru.md)
+- [Türkçe](docs/i18n/README.tr.md)
+- [Polski](docs/i18n/README.pl.md)
+- [日本語](docs/i18n/README.ja.md)
 
 ## ✨ Plugin Features
 
@@ -80,6 +77,7 @@
         "distPath": [], // (Optional) Local directories to be uploaded. Supports strings or arrays. Default is to upload the root directory
         "upload_to_root": false, // If only one directory is configured in distPath, upload it to the root of the remotePath. Generally used for deploying front-end code. Default is false
         "deleteRemote": false, // Whether to delete the remote distPath directory before uploading. Generally used for cleaning up front-end deployment code. Default is false
+        "syncFileTime": false, // Whether to sync remote file timestamp after upload (using local file time). Default is false
         "remotePath": "/www/wwwroot/test", // (For sftp, ssh configuration) Server address for upload
         "excludePath": [], // (Optional) Files and directories to be excluded from upload in the current environment. It will be merged with the plugin's excludePath configuration. When the plugin uses gitignore, it will be merged with the .gitignore configuration file
         // "downloadPath": "" // (Optional) Download path. Default is the current project root directory. Used when manually downloading files or folders. You can specify a download address
@@ -105,6 +103,7 @@
         //"delete_remote_compress": true,
         "upload_to_root": false,
         "deleteRemote": false,
+        "syncFileTime": false,
         "distPath": [],
         "remotePath": "/www/wwwroot/online",
         "excludePath": [],
@@ -113,6 +112,18 @@
         "default": false
     }
 }
+```
+
+### Authentication Priority & Validation Errors
+
+- For `sftp` / `ssh`, authentication tries `privateKeyPath` first; if it is unavailable, it falls back to `password`.
+- For `ftp`, only `password` authentication is supported.
+- Runtime validation messages:
+
+```text
+FTP only supports password authentication. Please configure [password]
+The configured [privateKeyPath] does not exist, and [password] is empty. Please provide a valid private key file or password
+Please configure authentication: [privateKeyPath] (preferred) or [password]
 ```
 
 ```js
@@ -131,6 +142,61 @@ Upload demonstration
 
 File comparison demonstration
 ![](https://cdn.jsdelivr.net/gh/oorzc/public_img@main/img/2024%2F11%2F12%2F6cbd149ae7959c8097ce288fb91ed800.gif)
+
+## Build Commands
+
+```bash
+# install dependencies
+npm install
+
+# development watch build
+npm run watch
+
+# production build (output: dist/extension.js)
+npm run package
+
+# package VSIX (output: ssh-tools-<version>.vsix)
+npx @vscode/vsce package --no-dependencies
+```
+
+- `npm run package` only builds the extension bundle, it does not generate a `.vsix` file.
+- `npm run vscepackage` requires globally installed `vsce`; if not installed, prefer `npx @vscode/vsce package --no-dependencies`.
+
+## Development Notes
+
+### i18n extraction
+
+```bash
+npx @vscode/l10n-dev export -o ./l10n ./src
+```
+
+### Publish commands
+
+```bash
+# package locally
+npx @vscode/vsce package --no-dependencies
+
+# publish to VS Code Marketplace
+npx @vscode/vsce publish
+npx @vscode/vsce publish major
+npx @vscode/vsce publish minor
+npx @vscode/vsce publish patch
+npx @vscode/vsce publish 0.0.4
+
+# publish to Open VSX (VSCodium)
+npx ovsx publish -p <OVSX_TOKEN>
+# or set env var OVSX_PAT then run ovsx publish
+```
+
+### VS Code references
+
+- `when` clause contexts: https://code.visualstudio.com/api/references/when-clause-contexts#conditional-operators
+- Built-in codicons in labels: https://code.visualstudio.com/api/references/icons-in-labels#icon-in-labels
+
+### Type-check strategy
+
+- Decision note: `docs/typecheck-strategy.md`
+- Quick commands: `npm run typecheck`, `npm run typecheck:strict`
 
 ## Friendly Reminder
 

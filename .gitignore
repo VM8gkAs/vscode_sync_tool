@@ -1,7 +1,18 @@
+# common
+.idea/
+__pycache__/
+*.py[cod]
+.DS_Store
+Thumbs.db
+
+# build/deps/package
 dist
 node_modules
-.vscode-test/
 *.vsix
+
+# local VS Code test
+.vscode-test/
+
 # types
 sync_tools.jsonc
 sync_config.jsonc

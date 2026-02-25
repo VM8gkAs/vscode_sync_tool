@@ -29,7 +29,7 @@
   "SyncTools.clearCache": "Очистить текущий кэш watch",
   "SyncTools.clearAllCache": "Очистить весь кэш watch",
   "SyncTools.confirmMoveOrUpload": "Требуется ли подтверждение при перемещении или загрузке файлов в клиентском представлении",
-  "SyncTools.config_desc": "Настройки отсутствуют. См. [инструкции по настройке](https://github.com/oorzc/vscode_sync_tool/blob/main/lang/ru.md).\n[Добавить настройку](command:sync_tools.addConfig)",
+  "SyncTools.config_desc": "Настройки отсутствуют. См. [инструкции по настройке](https://github.com/oorzc/vscode_sync_tool/blob/main/docs/i18n/README.ru.md).\n[Добавить настройку](command:sync_tools.addConfig)",
   "SyncTools.gitignore.description": "Использовать ли файл конфигурации .gitignore для игнорирования содержимого загрузки. По умолчанию true.",
   "SyncTools.excludePath.description": "Файлы или папки, которые не загружаются по умолчанию",
   "SyncTools.logShow": "Необходимо ли отображать логи в режиме реального времени. По умолчанию true.",

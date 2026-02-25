@@ -29,7 +29,7 @@
   "SyncTools.clearCache": "Aktuellen Watch-Cache löschen",
   "SyncTools.clearAllCache": "Alle Watch-Caches löschen",
   "SyncTools.confirmMoveOrUpload": "Soll beim Verschieben oder Hochladen von Dateien in der Clientansicht eine Bestätigung erforderlich sein?",
-  "SyncTools.config_desc": "Keine Konfiguration vorhanden. Bitte lesen Sie [die Konfigurationsbeschreibung](https://github.com/oorzc/vscode_sync_tool/blob/main/lang/de.md).\n[Konfiguration hinzufügen](command:sync_tools.addConfig)",
+  "SyncTools.config_desc": "Keine Konfiguration vorhanden. Bitte lesen Sie [die Konfigurationsbeschreibung](https://github.com/oorzc/vscode_sync_tool/blob/main/docs/i18n/README.de.md).\n[Konfiguration hinzufügen](command:sync_tools.addConfig)",
   "SyncTools.gitignore.description": "Soll die .gitignore-Konfigurationsdatei verwendet werden, um Inhalte beim Hochladen zu ignorieren? Standardmäßig ist dies true.",
   "SyncTools.excludePath.description": "Standardmäßig werden diese Dateien oder Ordner nicht hochgeladen",
   "SyncTools.logShow": "Sollen die Protokolle in Echtzeit angezeigt werden? Standardmäßig ist dies true.",

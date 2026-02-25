@@ -336,6 +336,18 @@ export default class FileTransfer extends EventEmitter {
                     configClone.password = decryptedPassword ? decryptedPassword : configClone.password;
                 }
 
+                if (configClone.type !== 'ftp') {
+                    const keyPath = typeof configClone.privateKeyPath === 'string' ? configClone.privateKeyPath.trim() : '';
+                    const hasValidPrivateKey = Boolean(keyPath) && fs.existsSync(keyPath);
+
+                    if (hasValidPrivateKey) {
+                        configClone.privateKeyPath = keyPath;
+                        configClone.password = undefined;
+                    } else {
+                        configClone.privateKeyPath = undefined;
+                    }
+                }
+
                 if (configClone.type === 'ftp') {
                     // 设置 FTP 用户名，并连接
                     configClone.user = configClone.username;
@@ -393,6 +405,61 @@ export default class FileTransfer extends EventEmitter {
 
 
     // 上传文件
+    /**
+     * 檢查遠端檔案大小和修改時間是否與本地相同，相同則跳過上傳
+     */
+    private async shouldSkipUpload(client: any, task: Task, remotePath: string): Promise<boolean> {
+        const { config } = task;
+        if (!config.skipIfSameSize) return false;
+        if (task.isDirectory || !task.localPath || !fs.existsSync(task.localPath)) return false;
+
+        try {
+            const localStat = fs.statSync(task.localPath);
+            if (!localStat.isFile()) return false;
+
+            const localSize = localStat.size;
+            const localMtime = Math.floor(localStat.mtimeMs / 1000);
+
+            let remoteSize: number | null = null;
+            let remoteMtime: number | null = null;
+
+            if (config.type === 'ftp') {
+                // FTP: get size and mtime separately
+                try {
+                    remoteSize = await client.size(remotePath);
+                } catch { remoteSize = null; }
+                try {
+                    const ftpDate = await client.lastMod(remotePath);
+                    if (ftpDate instanceof Date) {
+                        remoteMtime = Math.floor(ftpDate.getTime() / 1000);
+                    }
+                } catch { remoteMtime = null; }
+            } else if (client.stat) {
+                // SFTP/SSH: stat returns both
+                try {
+                    const stat = await client.stat(remotePath);
+                    if (stat) {
+                        remoteSize = stat.size ?? null;
+                        if (stat.modifyTime) {
+                            remoteMtime = Math.floor(new Date(stat.modifyTime).getTime() / 1000);
+                        }
+                    }
+                } catch { /* file doesn't exist */ }
+            }
+
+            if (remoteSize !== null && remoteMtime !== null) {
+                if (remoteSize === localSize && remoteMtime === localMtime) {
+                    const time = dayjs().format('YYYY-MM-DD HH:mm:ss');
+                    addLogTask(`[${time}][${config.name}][${config.type}][skipUpload]: ${remotePath} (size=${localSize}, mtime=${localMtime})`);
+                    return true;
+                }
+            }
+        } catch {
+            // 讀取失敗不跳過，繼續上傳
+        }
+        return false;
+    }
+
     async uploadFile(client: any, task: Task): Promise<void> {
         let { localPath, remotePath, config, useZip, isDirectory } = task;
         return new Promise(async (resolve, reject) => {
@@ -404,6 +471,16 @@ export default class FileTransfer extends EventEmitter {
                 task.fileSize = fileStat.size
                 task.isDirectory = fileStat.isDirectory()
                 task.fileSizeText = formatFileSize(task.fileSize)
+
+                // skipIfSameSize: 檢查遠端檔案是否相同，相同則跳過上傳
+                const normalizedRemotePath = getNormalPath(remotePath);
+                if (!task.isDirectory && await this.shouldSkipUpload(client, task, normalizedRemotePath)) {
+                    task.progress = 100;
+                    task.useTime = '0.00';
+                    resolve();
+                    return;
+                }
+
                 // 开始上传
                 if (config.type === "ftp") {
                     if (task.isDirectory) {
@@ -434,6 +511,7 @@ export default class FileTransfer extends EventEmitter {
                         remotePath = getNormalPath(remotePath)
                         await client.uploadFrom(localPath, remotePath)
                         client.trackProgress()
+                        await this.syncRemoteFileTime(client, task, remotePath)
                     }
                 } else {
                     if (isDirectory) {
@@ -454,6 +532,7 @@ export default class FileTransfer extends EventEmitter {
                                 updateTaskProgress();
                             }
                         })
+                        await this.syncRemoteFileTime(client, task, remotePath)
                     }
                 }
 
@@ -478,6 +557,217 @@ export default class FileTransfer extends EventEmitter {
                 reject(err);
             }
         });
+    }
+
+    private formatFtpMfmtTime(date: Date): string {
+        const year = date.getUTCFullYear();
+        const month = `${date.getUTCMonth() + 1}`.padStart(2, '0');
+        const day = `${date.getUTCDate()}`.padStart(2, '0');
+        const hour = `${date.getUTCHours()}`.padStart(2, '0');
+        const minute = `${date.getUTCMinutes()}`.padStart(2, '0');
+        const second = `${date.getUTCSeconds()}`.padStart(2, '0');
+        return `${year}${month}${day}${hour}${minute}${second}`;
+    }
+
+    private formatFtpUtimeLocal(date: Date): string {
+        const year = date.getFullYear();
+        const month = `${date.getMonth() + 1}`.padStart(2, '0');
+        const day = `${date.getDate()}`.padStart(2, '0');
+        const hour = `${date.getHours()}`.padStart(2, '0');
+        const minute = `${date.getMinutes()}`.padStart(2, '0');
+        const second = `${date.getSeconds()}`.padStart(2, '0');
+        return `${year}${month}${day}${hour}${minute}${second}`;
+    }
+
+    private normalizeToSecond(date: Date): Date {
+        return new Date(Math.floor(date.getTime() / 1000) * 1000);
+    }
+
+    private logSyncFileTime(task: Task, message: string) {
+        const { config } = task;
+        const time = dayjs().format('YYYY-MM-DD HH:mm:ss');
+        addLogTask(`[${time}][${config.name}][${config.type}][syncFileTime]: ${message}`);
+    }
+
+    private async applyRemoteFileTime(client: any, task: Task, remotePath: string, targetTime: Date) {
+        const { config } = task;
+
+        if (config.type === 'ftp') {
+            if (!client.send) {
+                return;
+            }
+
+            const quotedPath = `"${remotePath.replace(/"/g, '""')}"`;
+            const mfmtTime = this.formatFtpMfmtTime(targetTime);
+            const utimeTime = this.formatFtpUtimeLocal(targetTime);
+
+            const buildCommands = (targetPath: string) => [
+                `MFMT ${mfmtTime} ${targetPath}`,
+                `SITE MFMT ${mfmtTime} ${targetPath}`,
+                `MDTM ${mfmtTime} ${targetPath}`,
+                `SITE UTIME ${targetPath} ${utimeTime} ${utimeTime} ${utimeTime} UTC`,
+                `SITE UTIME ${utimeTime} ${utimeTime} ${utimeTime} UTC ${targetPath}`,
+                `SITE TOUCH ${utimeTime} ${targetPath}`,
+            ];
+
+            const directTargets = [quotedPath, remotePath];
+
+            let lastErr: any;
+            const errorLogs: string[] = [];
+            for (const targetPath of directTargets) {
+                for (const command of buildCommands(targetPath)) {
+                    try {
+                        await client.send(command);
+                        return;
+                    } catch (err) {
+                        lastErr = err;
+                        errorLogs.push(`${command} => ${err}`);
+                    }
+                }
+            }
+
+            const fileName = path.posix.basename(remotePath);
+            const quotedFileName = `"${fileName.replace(/"/g, '""')}"`;
+            const dirNameRaw = path.posix.dirname(remotePath);
+            const dirName = !dirNameRaw || dirNameRaw === '.' ? '/' : dirNameRaw;
+
+            if (client.cd && client.pwd) {
+                const originalDir = await client.pwd();
+                try {
+                    await client.cd(dirName);
+                    for (const targetPath of [quotedFileName, fileName]) {
+                        for (const command of buildCommands(targetPath)) {
+                            try {
+                                await client.send(command);
+                                return;
+                            } catch (err) {
+                                lastErr = err;
+                                errorLogs.push(`[cwd:${dirName}] ${command} => ${err}`);
+                            }
+                        }
+                    }
+                } finally {
+                    await client.cd(originalDir || '/');
+                }
+            }
+
+            const summary = errorLogs.length
+                ? `all ftp commands failed: ${errorLogs.join(' | ')}`
+                : `${lastErr}`;
+            throw new Error(summary);
+        }
+
+        // SFTP: try underlying sftp.utimes first, then exec touch
+        if (config.type === 'sftp') {
+            // Try underlying ssh2 SFTP utimes (client.sftp is the raw SFTP handle)
+            if (client.sftp && client.sftp.utimes) {
+                try {
+                    const epochSeconds = Math.floor(targetTime.getTime() / 1000);
+                    await new Promise<void>((resolve, reject) => {
+                        client.sftp.utimes(remotePath, epochSeconds, epochSeconds, (err: any) => {
+                            if (err) reject(err);
+                            else resolve();
+                        });
+                    });
+                    return;
+                } catch (e) {
+                    this.logSyncFileTime(task, `sftp.utimes failed: ${e}, trying exec touch...`);
+                }
+            }
+            // Fallback: exec touch via SSH channel
+            if (client.exec) {
+                const epochSeconds = Math.floor(targetTime.getTime() / 1000);
+                const escapedPath = remotePath.replace(/'/g, `'"'"'`);
+                await client.exec(`touch -m -d @${epochSeconds} '${escapedPath}'`);
+                return;
+            }
+            return;
+        }
+
+        // SSH type
+        if (config.type === 'ssh' && client.exec) {
+            const epochSeconds = Math.floor(targetTime.getTime() / 1000);
+            const escapedPath = remotePath.replace(/'/g, `'"'"'`);
+            await client.exec(`touch -m -d @${epochSeconds} '${escapedPath}'`);
+        }
+    }
+
+    private async getRemoteFileTime(client: any, task: Task, remotePath: string): Promise<Date | null> {
+        const { config } = task;
+
+        try {
+            if (config.type === 'ftp') {
+                if (client.lastMod) {
+                    const ftpDate = await client.lastMod(remotePath);
+                    if (ftpDate instanceof Date) {
+                        return this.normalizeToSecond(ftpDate);
+                    }
+                }
+                return null;
+            }
+
+            if (client.stat) {
+                const stat = await client.stat(remotePath);
+                if (stat?.modifyTime) {
+                    return this.normalizeToSecond(new Date(stat.modifyTime));
+                }
+            }
+
+            if ((config.type === 'ssh' || config.type === 'sftp') && client.exec) {
+                const escapedPath = remotePath.replace(/'/g, `'"'"'`);
+                const result = await client.exec(`stat -c %Y '${escapedPath}'`);
+                const epoch = Number((result?.stdout || '').toString().trim());
+                if (!Number.isNaN(epoch) && epoch > 0) {
+                    return new Date(epoch * 1000);
+                }
+            }
+        } catch {
+            return null;
+        }
+
+        return null;
+    }
+
+    async syncRemoteFileTime(client: any, task: Task, remotePath: string) {
+        const { config, localPath } = task;
+        if (!config.syncFileTime || task.isDirectory || !localPath || !fs.existsSync(localPath)) {
+            return;
+        }
+
+        try {
+            const localStat = fs.statSync(localPath);
+            if (!localStat.isFile()) {
+                return;
+            }
+
+            const targetTime = this.normalizeToSecond(localStat.mtime);
+            await this.applyRemoteFileTime(client, task, remotePath, targetTime);
+
+            const remoteTime = await this.getRemoteFileTime(client, task, remotePath);
+            if (!remoteTime) {
+                return;
+            }
+
+            const deltaMs = remoteTime.getTime() - targetTime.getTime();
+            if (Math.abs(deltaMs) <= 1000) {
+                return;
+            }
+
+            const correctedTime = this.normalizeToSecond(new Date(targetTime.getTime() - deltaMs));
+            await this.applyRemoteFileTime(client, task, remotePath, correctedTime);
+
+            const verifyTime = await this.getRemoteFileTime(client, task, remotePath);
+            if (verifyTime) {
+                const finalDeltaMs = verifyTime.getTime() - targetTime.getTime();
+                if (Math.abs(finalDeltaMs) > 1000) {
+                    this.logSyncFileTime(task, `${remotePath} remaining delta ${finalDeltaMs}ms (local=${targetTime.toISOString()}, remote=${verifyTime.toISOString()})`);
+                    console.warn(`[syncFileTime][${config.name}] ${remotePath}: remaining delta ${finalDeltaMs}ms`);
+                }
+            }
+        } catch (err) {
+            this.logSyncFileTime(task, `${remotePath} failed: ${err}`);
+            console.warn(`[syncFileTime][${config.name}] ${remotePath}: ${err}`);
+        }
     }
 
     async uploadFolder(task: Task) {
@@ -686,6 +976,12 @@ export default class FileTransfer extends EventEmitter {
                 newPath = newRemotePath
                 oldPath = oldRemotePath
             }
+
+            if (config.type !== "ftp") {
+                oldPath = getNormalPath(oldPath)
+                newPath = getNormalPath(newPath)
+            }
+
             let exists = false
             // 检查文件是否存在
             if (config.type === "ftp") {

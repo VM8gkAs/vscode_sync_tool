@@ -29,7 +29,7 @@
   "SyncTools.clearCache": "Wyczyść bieżący cache monitorowania",
   "SyncTools.clearAllCache": "Wyczyść wszystkie cache monitorowania",
   "SyncTools.confirmMoveOrUpload": "Czy podczas przenoszenia lub przesyłania plików w widoku klienta powinno być wyświetlane potwierdzenie?",
-  "SyncTools.config_desc": "Brak konfiguracji, zapoznaj się z [Opisem konfiguracji](https://github.com/oorzc/vscode_sync_tool/blob/main/lang/pl.md). \n[Dodaj konfigurację](command:sync_tools.addConfig)",
+  "SyncTools.config_desc": "Brak konfiguracji, zapoznaj się z [Opisem konfiguracji](https://github.com/oorzc/vscode_sync_tool/blob/main/docs/i18n/README.pl.md). \n[Dodaj konfigurację](command:sync_tools.addConfig)",
   "SyncTools.gitignore.description": "Czy używać pliku konfiguracyjnego .gitignore do ignorowania przesyłanych plików, domyślnie true",
   "SyncTools.excludePath.description": "Domyślnie nie przesyłane pliki lub foldery",
   "SyncTools.logShow": "Czy logi powinny być wyświetlane w czasie rzeczywistym, domyślnie true",

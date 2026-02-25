@@ -85,5 +85,8 @@
   "theEncryptedDataCannotBeEmpty": "Şifrelenmiş veri boş olamaz!",
   "theSecretKeyFileDoesNotExist": "secretKey dosyası bulunamadı, lütfen kontrol edin!",
   "thePluginHasExpiredPleaseDownloadTheLatestVersion": "Eklentinin süresi doldu, lütfen en son sürümü indirin!",
-  "noFilesThatNeedToBeCompressed": "Sıkıştırılması gereken dosya bulunamadı. Lütfen yükleme ayarlarının doğru olup olmadığını kontrol edin!"
+  "noFilesThatNeedToBeCompressed": "Sıkıştırılması gereken dosya bulunamadı. Lütfen yükleme ayarlarının doğru olup olmadığını kontrol edin!",
+  "FTP only supports password authentication. Please configure [password]": "FTP yalnızca parola kimlik doğrulamasını destekler. Lütfen [password] yapılandırın",
+  "The configured [privateKeyPath] does not exist, and [password] is empty. Please provide a valid private key file or password": "Yapılandırılan [privateKeyPath] mevcut değil ve [password] boş. Lütfen geçerli bir özel anahtar dosyası veya parola sağlayın",
+  "Please configure authentication: [privateKeyPath] (preferred) or [password]": "Lütfen kimlik doğrulamayı yapılandırın: [privateKeyPath] (öncelikli) veya [password]"
 }

@@ -85,5 +85,8 @@
   "theEncryptedDataCannotBeEmpty": "¡Los datos encriptados no pueden estar vacíos!",
   "theSecretKeyFileDoesNotExist": "¡El archivo secretKey no existe, por favor verifique!",
   "thePluginHasExpiredPleaseDownloadTheLatestVersion": "El complemento ha caducado, ¡descarga la última versión!",
-  "noFilesThatNeedToBeCompressed": "No se detectaron archivos que necesiten compresión. ¡Por favor, verifique si la configuración de carga es correcta!"
+  "noFilesThatNeedToBeCompressed": "No se detectaron archivos que requieran compresión y carga. ¡Por favor, verifica si la configuración de carga es correcta!",
+  "FTP only supports password authentication. Please configure [password]": "FTP solo admite autenticación por contraseña. Configure [password]",
+  "The configured [privateKeyPath] does not exist, and [password] is empty. Please provide a valid private key file or password": "La [privateKeyPath] configurada no existe y [password] está vacío. Proporcione una clave privada válida o una contraseña",
+  "Please configure authentication: [privateKeyPath] (preferred) or [password]": "Configure la autenticación: [privateKeyPath] (preferido) o [password]"
 }

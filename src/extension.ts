@@ -27,6 +27,8 @@ let TreeView: vscode.TreeView<vscode.TreeItem>
 let renamingFiles: Set<string> = new Set();
 // 防止保存时，会触发保存文件监听
 let saveFiles: Set<string> = new Set();
+// upload_on_save 延迟上传计时器（同一配置+同一路径只保留最后一次触发）
+const uploadOnSaveTimers: Map<string, NodeJS.Timeout> = new Map();
 
 // TODO 添加拖拽上传是否需要确认功能，添加ssh右键解压功能，有同步任务时需要刷新同步状态
 // TODO watch上传后未清空缓存，需要添加清空缓存功能
@@ -388,6 +390,33 @@ async function clearAllCache(workspaceState: vscode.Memento) {
 	});
 }
 
+function scheduleUploadOnSave(
+	item: FileTransferConfigItem,
+	file: string,
+	opType: opType
+) {
+	const timerKey = `${item.name}###${file}`
+	const existingTimer = uploadOnSaveTimers.get(timerKey)
+	if (existingTimer) {
+		clearTimeout(existingTimer)
+		uploadOnSaveTimers.delete(timerKey)
+	}
+
+	const delaySeconds = item.uploadDelay ?? 0
+	if (delaySeconds <= 0) {
+		uploadOnSave(item, file, opType)
+		return
+	}
+
+	const latestOpType = JSON.parse(JSON.stringify(opType)) as opType
+	const timer = setTimeout(() => {
+		uploadOnSaveTimers.delete(timerKey)
+		uploadOnSave(item, file, latestOpType)
+	}, delaySeconds * 1000)
+
+	uploadOnSaveTimers.set(timerKey, timer)
+}
+
 
 // 将变化文件加入缓存
 async function saveChangeFile(
@@ -438,11 +467,10 @@ async function saveChangeFile(
 					// 检测是否排除
 					let res = await isIgnore(ignore_arr, file)
 					if (!res) {
-						uploadOnSave(item, file, opType)
+						scheduleUploadOnSave(item, file, opType)
 					}
 					return
 				}
-
 				// 判断是否监听项目
 				if (!item.watch) return
 

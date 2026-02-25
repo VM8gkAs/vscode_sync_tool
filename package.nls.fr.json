@@ -29,7 +29,7 @@
   "SyncTools.clearCache": "Effacer le cache watch actuel",
   "SyncTools.clearAllCache": "Effacer tous les caches watch",
   "SyncTools.confirmMoveOrUpload": "Faut-il confirmer lors du déplacement ou du téléversement de fichiers dans la vue client ?",
-  "SyncTools.config_desc": "Aucune configuration pour le moment. Veuillez consulter [la description de la configuration](https://github.com/oorzc/vscode_sync_tool/blob/main/lang/fr.md).\n[Ajouter une configuration](command:sync_tools.addConfig)",
+  "SyncTools.config_desc": "Aucune configuration pour le moment. Veuillez consulter [la description de la configuration](https://github.com/oorzc/vscode_sync_tool/blob/main/docs/i18n/README.fr.md).\n[Ajouter une configuration](command:sync_tools.addConfig)",
   "SyncTools.gitignore.description": "Utiliser le fichier de configuration .gitignore pour ignorer le contenu du téléversement ? Par défaut, c'est true.",
   "SyncTools.excludePath.description": "Fichiers ou dossiers qui ne sont pas téléversés par défaut",
   "SyncTools.logShow": "Faut-il afficher en temps réel les journaux ? Par défaut, c'est true.",

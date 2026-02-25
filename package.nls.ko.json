@@ -29,7 +29,7 @@
   "SyncTools.clearCache": "현재 watch 캐시 지우기",
   "SyncTools.clearAllCache": "모든 watch 캐시 지우기",
   "SyncTools.confirmMoveOrUpload": "클라이언트 뷰에서 파일을 이동하거나 업로드할 때 확인이 필요한지 여부",
-  "SyncTools.config_desc": "현재 구성이 없습니다. [구성 설명](https://github.com/oorzc/vscode_sync_tool/blob/main/lang/ko.md)을 참조하세요.\n[설정 추가](command:sync_tools.addConfig)",
+  "SyncTools.config_desc": "현재 구성이 없습니다. [구성 설명](https://github.com/oorzc/vscode_sync_tool/blob/main/docs/i18n/README.ko.md)을 참조하세요.\n[설정 추가](command:sync_tools.addConfig)",
   "SyncTools.gitignore.description": ".gitignore 구성 파일을 사용하여 업로드 내용을 무시할지 여부. 기본값은 true입니다.",
   "SyncTools.excludePath.description": "기본적으로 업로드하지 않는 파일 또는 폴더",
   "SyncTools.logShow": "로그를 실시간으로 표시할지 여부. 기본값은 true입니다.",

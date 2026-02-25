@@ -29,7 +29,7 @@
   "SyncTools.clearCache": "清除当前watch缓存",
   "SyncTools.clearAllCache": "清除所有watch缓存",
   "SyncTools.confirmMoveOrUpload": "在客户端视图中，移动或上传文件时是否需要确认",
-  "SyncTools.config_desc": "暂无配置，请参考 [配置说明](https://github.com/oorzc/vscode_sync_tool/blob/main/lang/zh.md).\n[添加配置](command:sync_tools.addConfig)",
+  "SyncTools.config_desc": "暂无配置，请参考 [配置说明](https://github.com/oorzc/vscode_sync_tool/blob/main/docs/i18n/README.zh-CN.md).\n[添加配置](command:sync_tools.addConfig)",
   "SyncTools.gitignore.description": "是否使用.gitignore配置文件，忽略上传内容，默认true",
   "SyncTools.excludePath.description": "默认不上传文件或文件夹",
   "SyncTools.logShow": "是否需要实时展示日志，默认为true",

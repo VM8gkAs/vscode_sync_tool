@@ -85,5 +85,8 @@
     "theEncryptedDataCannotBeEmpty": "加密資料不能為空！",
     "theSecretKeyFileDoesNotExist": "secretKey 密鑰文件不存在，請檢查！",
     "thePluginHasExpiredPleaseDownloadTheLatestVersion": "插件已失效，請下載最新版！",
-    "noFilesThatNeedToBeCompressed": "沒有檢測到需要壓縮上傳的文件，請檢查上傳配置是否有誤！"
+    "noFilesThatNeedToBeCompressed": "沒有檢測到需要壓縮上傳的文件，請檢查上傳配置是否有誤！",
+    "FTP only supports password authentication. Please configure [password]": "FTP 僅支援密碼認證，請配置 [password]",
+    "The configured [privateKeyPath] does not exist, and [password] is empty. Please provide a valid private key file or password": "配置的 [privateKeyPath] 不存在，且 [password] 為空。請提供有效的私鑰檔案或密碼",
+    "Please configure authentication: [privateKeyPath] (preferred) or [password]": "請配置認證資訊：[privateKeyPath]（優先）或 [password]"
 }

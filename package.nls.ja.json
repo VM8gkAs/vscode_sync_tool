@@ -29,7 +29,7 @@
   "SyncTools.clearCache": "現在のウォッチキャッシュをクリア",
   "SyncTools.clearAllCache": "すべてのウォッチキャッシュをクリア",
   "SyncTools.confirmMoveOrUpload": "クライアントビューでファイルを移動またはアップロードする際に確認を求めるかどうか",
-  "SyncTools.config_desc": "設定がありません。[設定の説明](https://github.com/oorzc/vscode_sync_tool/blob/main/lang/ja.md)を参照してください。 \n[設定を追加](command:sync_tools.addConfig)",
+  "SyncTools.config_desc": "設定がありません。[設定の説明](https://github.com/oorzc/vscode_sync_tool/blob/main/docs/i18n/README.ja.md)を参照してください。 \n[設定を追加](command:sync_tools.addConfig)",
   "SyncTools.gitignore.description": ".gitignore設定ファイルを使用してアップロード内容を無視するかどうか、デフォルトはtrue",
   "SyncTools.excludePath.description": "デフォルトでアップロードされないファイルまたはフォルダー",
   "SyncTools.logShow": "ログをリアルタイムで表示するかどうか、デフォルトはtrue",

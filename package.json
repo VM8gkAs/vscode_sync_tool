@@ -3,7 +3,7 @@
   "displayName": "FTP/SFTP/SSH Sync Tool",
   "publisher": "oorzc",
   "description": "%SyncTools.title%",
-  "version": "0.5.0",
+  "version": "0.6.0",
   "icon": "static/logo_new.png",
   "engines": {
     "vscode": "^1.73.0"
@@ -441,8 +441,10 @@
   },
   "scripts": {
     "compile": "tsc -watch -p ./",
+    "typecheck": "tsc -p ./ --noEmit",
+    "typecheck:strict": "tsc -p ./ --noEmit --skipLibCheck false",
     "watch": "webpack --watch --mode development",
-    "package": "NODE_ENV=production webpack --mode production --devtool hidden-source-map",
+    "package": "webpack --node-env production --mode production --devtool hidden-source-map",
     "vscepackage": "npm run package && vsce package --no-dependencies",
     "pretest": "yarn run compile && yarn run lint",
     "lint": "eslint src --ext ts",

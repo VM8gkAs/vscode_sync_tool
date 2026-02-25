@@ -29,7 +29,7 @@
   "SyncTools.clearCache": "Cancella la cache watch attuale",
   "SyncTools.clearAllCache": "Cancella tutte le cache watch",
   "SyncTools.confirmMoveOrUpload": "È necessario confermare quando si spostano o si caricano file nella vista client?",
-  "SyncTools.config_desc": "Nessuna configurazione disponibile. Consulta [la descrizione della configurazione](https://github.com/oorzc/vscode_sync_tool/blob/main/lang/it.md).\n[Aggiungi configurazione](command:sync_tools.addConfig)",
+  "SyncTools.config_desc": "Nessuna configurazione disponibile. Consulta [la descrizione della configurazione](https://github.com/oorzc/vscode_sync_tool/blob/main/docs/i18n/README.it.md).\n[Aggiungi configurazione](command:sync_tools.addConfig)",
   "SyncTools.gitignore.description": "Utilizzare il file di configurazione .gitignore per ignorare il contenuto del caricamento? Di default è true.",
   "SyncTools.excludePath.description": "File o cartelle che non vengono caricati di default",
   "SyncTools.logShow": "Mostrare i log in tempo reale? Di default è true.",

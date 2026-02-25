@@ -85,5 +85,8 @@
   "theEncryptedDataCannotBeEmpty": "Зашифрованные данные не могут быть пустыми!",
   "theSecretKeyFileDoesNotExist": " Файл secretKey не существует, пожалуйста, проверьте!",
   "thePluginHasExpiredPleaseDownloadTheLatestVersion": "Плагин устарел, пожалуйста, скачайте последнюю версию!",
-  "noFilesThatNeedToBeCompressed": "Не обнаружено файлов, требующих сжатия. Пожалуйста, проверьте, правильно ли настроена загрузка!"
+  "noFilesThatNeedToBeCompressed": "Не обнаружено файлов, требующих сжатия. Пожалуйста, проверьте, правильно ли настроена загрузка!",
+  "FTP only supports password authentication. Please configure [password]": "FTP поддерживает только аутентификацию по паролю. Укажите [password]",
+  "The configured [privateKeyPath] does not exist, and [password] is empty. Please provide a valid private key file or password": "Указанный [privateKeyPath] не существует, а [password] пуст. Укажите корректный файл приватного ключа или пароль",
+  "Please configure authentication: [privateKeyPath] (preferred) or [password]": "Настройте аутентификацию: [privateKeyPath] (предпочтительно) или [password]"
 }

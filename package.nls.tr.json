@@ -29,7 +29,7 @@
   "SyncTools.clearCache": "Mevcut izleme önbelleğini temizle",
   "SyncTools.clearAllCache": "Tüm izleme önbelleğini temizle",
   "SyncTools.confirmMoveOrUpload": "İstemci görünümünde dosya taşıma veya yükleme işlemi yapılırken onay istenmeli mi?",
-  "SyncTools.config_desc": "Henüz yapılandırma yok, lütfen [Yapılandırma açıklaması](https://github.com/oorzc/vscode_sync_tool/blob/main/lang/tr.md) bölümüne bakın. \n[Yapılandırma ekle](command:sync_tools.addConfig)",
+  "SyncTools.config_desc": "Henüz yapılandırma yok, lütfen [Yapılandırma açıklaması](https://github.com/oorzc/vscode_sync_tool/blob/main/docs/i18n/README.tr.md) bölümüne bakın. \n[Yapılandırma ekle](command:sync_tools.addConfig)",
   "SyncTools.gitignore.description": ".gitignore yapılandırma dosyası kullanılıp kullanılmayacağı, varsayılan olarak true",
   "SyncTools.excludePath.description": "Varsayılan olarak yüklenmeyen dosya veya klasörler",
   "SyncTools.logShow": "Günlüklerin gerçek zamanlı olarak gösterilip gösterilmeyeceği, varsayılan olarak true",

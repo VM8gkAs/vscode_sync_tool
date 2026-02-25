@@ -85,5 +85,8 @@
   "theEncryptedDataCannotBeEmpty": "암호화된 데이터는 비어 있을 수 없습니다!",
   "theSecretKeyFileDoesNotExist": "secretKey 파일이 존재하지 않습니다. 확인해 주세요!",
   "thePluginHasExpiredPleaseDownloadTheLatestVersion": "플러그인이 만료되었습니다. 최신 버전을 다운로드하세요!",
-  "noFilesThatNeedToBeCompressed": "압축이 필요한 파일이 감지되지 않았습니다. 업로드 설정이 올바른지 확인하세요!"
+  "noFilesThatNeedToBeCompressed": "압축이 필요한 파일이 감지되지 않았습니다. 업로드 구성이 올바른지 확인하세요!",
+  "FTP only supports password authentication. Please configure [password]": "FTP는 비밀번호 인증만 지원합니다. [password]를 설정해 주세요",
+  "The configured [privateKeyPath] does not exist, and [password] is empty. Please provide a valid private key file or password": "설정한 [privateKeyPath]가 존재하지 않고 [password]가 비어 있습니다. 유효한 개인 키 파일 또는 비밀번호를 제공해 주세요",
+  "Please configure authentication: [privateKeyPath] (preferred) or [password]": "인증 정보를 설정해 주세요: [privateKeyPath] (우선) 또는 [password]"
 }
