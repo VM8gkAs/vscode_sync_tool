@@ -11,7 +11,7 @@ import { myEvent } from './events/myEvent';
 
 import { Dependency } from "./treeProvider"
 import { FileOpType, FileTransferConfigItem } from "./types/config"
-import { oConsole, getAllFiles, checkSubmitGit, getAllowFiles, verityConfig, getRootPath, throttle } from "./utils"
+import { oConsole, getAllFiles, checkSubmitGit, getAllowFiles, verityConfig, getRootPath, throttle, posixRelative } from "./utils"
 import { getContext } from "./config/globals"
 import { ClientConnectionError, NoWatchFilesError } from "./types/connect"
 import { addLogTask } from "./output"
@@ -387,8 +387,8 @@ export class Deploy {
 		log(`同步文件`)
 		// 是否压缩上传
 		if (this.config.compress && this.useZip) {
-			console.log("上传压缩文件");
-			let remotePath = path.join(this.config.type !== "ftp" ? this.config.remotePath : "", this.zipPath)
+			oConsole.log("上传压缩文件");
+			let remotePath = path.posix.join(this.config.type !== "ftp" ? this.config.remotePath : "", this.zipPath)
 			const localPath = path.join(this.rootPath, this.zipPath)
 
 			if (fs.existsSync(localPath)) {
@@ -429,9 +429,9 @@ export class Deploy {
 		}
 		let len = this.config.distPath?.length || 0
 
-		let remotePath = path.join(
+		let remotePath = path.posix.join(
 			this.config.type !== "ftp" ? this.config.remotePath : "",
-			path.relative(this.rootPath, v.file)
+			posixRelative(this.rootPath, v.file)
 		)
 
 		// 只有一个目录则上传该目录下文件，不包含目录
@@ -440,9 +440,9 @@ export class Deploy {
 			up_to_root = true
 
 			let new_path = path.join(this.rootPath, this.config.distPath[0])
-			remotePath = path.join(
+			remotePath = path.posix.join(
 				this.config.type !== "ftp" ? this.config.remotePath : "",
-				path.relative(new_path, v.file)
+				posixRelative(new_path, v.file)
 			)
 		}
 
@@ -455,9 +455,9 @@ export class Deploy {
 			if (files && files.length) {
 				for (const vv of files) {
 					if (up_to_root) {
-						remotePath = path.join(
+						remotePath = path.posix.join(
 							this.config.type !== "ftp" ? this.config.remotePath : "",
-							path.relative(this.config.type !== "ftp" ? this.rootPath : "", vv)
+							posixRelative(this.config.type !== "ftp" ? this.rootPath : "", vv)
 						)
 					}
 
@@ -486,13 +486,13 @@ export class Deploy {
 			return
 		}
 
-		let remotePath = path.join(
+		let remotePath = path.posix.join(
 			this.config.type !== "ftp" ? this.config.remotePath : "",
-			path.relative(this.rootPath, v.opType.newname)
+			posixRelative(this.rootPath, v.opType.newname)
 		)
-		let localPath = path.join(
+		let localPath = path.posix.join(
 			this.config.type !== "ftp" ? this.config.remotePath : "",
-			path.relative(this.rootPath, v.file)
+			posixRelative(this.rootPath, v.file)
 		)
 
 		// 重命名文件
@@ -505,9 +505,9 @@ export class Deploy {
 	}
 
 	async deleteFile(v: FileOpType) {
-		let remotePath: string = path.join(
+		let remotePath: string = path.posix.join(
 			this.config.type !== "ftp" ? this.config.remotePath : "",
-			path.relative(this.rootPath, v.file)
+			posixRelative(this.rootPath, v.file)
 		)
 
 		await FileTransfer.addTask({

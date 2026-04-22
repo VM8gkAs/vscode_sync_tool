@@ -49,7 +49,9 @@ export interface DeployConfigItem {
     upload_to_root?: boolean //上传到根目录
     deleteRemote?: boolean; // 上传前是否删除远程文件
     syncFileTime?: boolean; // 上传后是否同步远程文件时间，默认false
-    skipIfSameSize?: boolean; // 上传前检查远程文件大小和时间，相同则跳过，默认true
+    skipIfSame?: boolean; // 上传前检查远程文件是否相同，相同则跳过，默认true
+    skipIfSameSize?: boolean; // (已棄用，向後相容) 舊名稱，等同 skipIfSame
+    skipCompareMode?: "size+mtime" | "size" | "mtime"; // 跳過比對標準，默認 "size+mtime"
     uploadDelay?: number; // 最后一次修改后延迟上传秒数（防抖），默认0（即时）
     remotePath: string; // 上传服务器地址  
     excludePath?: string | string[]; //  排除的上传文件及目录

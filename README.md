@@ -1,4 +1,4 @@
-﻿# FTP/SFTP/SSH Sync 
+# FTP/SFTP/SSH Sync 
 
 > A tool for rapid code synchronization
 
@@ -78,6 +78,9 @@
         "upload_to_root": false, // If only one directory is configured in distPath, upload it to the root of the remotePath. Generally used for deploying front-end code. Default is false
         "deleteRemote": false, // Whether to delete the remote distPath directory before uploading. Generally used for cleaning up front-end deployment code. Default is false
         "syncFileTime": false, // Whether to sync remote file timestamp after upload (using local file time). Default is false
+        "skipIfSame": true, // Whether to check remote file before upload and skip when identical. Default is true
+        "skipCompareMode": "size+mtime", // Comparison mode for skip check: "size+mtime" (default), "size", "mtime"
+        "uploadDelay": 0, // Debounce seconds after last change before uploading. Default is 0 (immediate). Only affects upload_on_save mode
         "remotePath": "/www/wwwroot/test", // (For sftp, ssh configuration) Server address for upload
         "excludePath": [], // (Optional) Files and directories to be excluded from upload in the current environment. It will be merged with the plugin's excludePath configuration. When the plugin uses gitignore, it will be merged with the .gitignore configuration file
         // "downloadPath": "" // (Optional) Download path. Default is the current project root directory. Used when manually downloading files or folders. You can specify a download address

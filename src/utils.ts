@@ -447,8 +447,12 @@ async function selectConfig(jsonText: string) {
 	if (configJson.syncFileTime === undefined) {
 		configJson.syncFileTime = false
 	}
-	if (configJson.skipIfSameSize === undefined) {
-		configJson.skipIfSameSize = true
+	if (configJson.skipIfSame === undefined) {
+		configJson.skipIfSame = configJson.skipIfSameSize ?? true
+	}
+	delete configJson.skipIfSameSize
+	if (configJson.skipCompareMode === undefined) {
+		configJson.skipCompareMode = "size+mtime"
 	}
 	if (configJson.uploadDelay === undefined) {
 		configJson.uploadDelay = 0
@@ -605,8 +609,13 @@ export async function getUserConfig(
 					if (res[v].syncFileTime === undefined) {
 						res[v].syncFileTime = false
 					}
-					if (res[v].skipIfSameSize === undefined) {
-						res[v].skipIfSameSize = true
+					// skipIfSameSize → skipIfSame 向後相容
+					if (res[v].skipIfSame === undefined) {
+						res[v].skipIfSame = res[v].skipIfSameSize ?? true
+					}
+					delete res[v].skipIfSameSize
+					if (res[v].skipCompareMode === undefined) {
+						res[v].skipCompareMode = "size+mtime"
 					}
 					if (res[v].uploadDelay === undefined) {
 						res[v].uploadDelay = 0
@@ -650,8 +659,12 @@ function setDefaultConfig(config: { [x: string]: boolean | number }, type: strin
 	if (config['syncFileTime'] === undefined) {
 		config['syncFileTime'] = false
 	}
-	if (config['skipIfSameSize'] === undefined) {
-		config['skipIfSameSize'] = true
+	if (config['skipIfSame'] === undefined) {
+		config['skipIfSame'] = (config as any)['skipIfSameSize'] ?? true
+	}
+	delete (config as any)['skipIfSameSize']
+	if (!config['skipCompareMode']) {
+		(config as any)['skipCompareMode'] = "size+mtime"
 	}
 	if (config['uploadDelay'] === undefined) {
 		config['uploadDelay'] = 0
@@ -1036,6 +1049,16 @@ export const getNormalPath = (remotePath: string) => {
 	// 使用 Node.js 的 path 模块来进一步处理路径（如果需要）
 	// 例如，可以转换为正斜杠（Linux/Unix 风格）
 	return path.posix.normalize(remotePath).replace(/\\/g, "/")
+}
+
+/**
+ * 計算 POSIX 風格的相對路徑（將 Windows 反斜線轉為正斜線）
+ * @param from 來源路徑
+ * @param to 目標路徑
+ * @returns POSIX 風格的相對路徑
+ */
+export function posixRelative(from: string, to: string): string {
+	return path.relative(from, to).split(path.sep).join('/')
 }
 
 // 生成随机密码字符串的函数

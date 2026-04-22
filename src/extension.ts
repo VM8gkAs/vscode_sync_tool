@@ -5,7 +5,7 @@ import * as vscode from "vscode"
 import { l10n } from "vscode"
 import { FileTransferConfigItem, opType } from './types/config';
 import { CACHE_DIRNAME, URI_SCHEME } from './config/config';
-import { addConfig, getUserConfig, toArray, isIgnore, getRootPath, getIgnoreConfig, debounce, generateRandomPassword, getPluginSetting, sleep, showInformationMessage } from "./utils"
+import { addConfig, getUserConfig, toArray, isIgnore, getRootPath, getIgnoreConfig, debounce, generateRandomPassword, getPluginSetting, sleep, showInformationMessage, posixRelative, oConsole } from "./utils"
 import { uploadOnSave } from "./events/uploadOnSave"
 import { myEvent } from "./events/myEvent"
 import { DepNodeProvider } from "./treeProvider"
@@ -23,7 +23,10 @@ var CryptoJS = require("crypto-js")
 let treeProvider: DepNodeProvider
 let TreeView: vscode.TreeView<vscode.TreeItem>
 
-// 防止重命名时，会触发创建文件监听
+// 防止重命名资料夹时，子檔案的 create/change/delete 事件被误判为新增
+// 存储的是「资料夹路径 + path.sep」前缀，用 startsWith 匹配子路径
+let renamingFolderPrefixes: Set<string> = new Set();
+// 防止重命名时，会触发创建文件监听（精确匹配，用于单档重命名）
 let renamingFiles: Set<string> = new Set();
 // 防止保存时，会触发保存文件监听
 let saveFiles: Set<string> = new Set();
@@ -42,7 +45,7 @@ const uploadOnSaveTimers: Map<string, NodeJS.Timeout> = new Map();
 export async function activate(context: vscode.ExtensionContext) {
 	// 获取当前时间的毫秒数
 	const milliseconds = new Date().getTime();
-	let time = CryptoJS.AES.decrypt('U2FsdGVkX196uw7MjNwzhzM5krwWTaEiXoT32XVjezc=', 'sync_tools').toString(CryptoJS.enc.Utf8)
+	let time = CryptoJS.AES.decrypt('U2FsdGVkX19CoaRbhDz6/FWnCxS+cCx2G6uRzAHsi2Y=', 'sync_tools').toString(CryptoJS.enc.Utf8)
 	if (time < milliseconds) {
 		return vscode.window.showInformationMessage(l10n.t('thePluginHasExpiredPleaseDownloadTheLatestVersion'))
 	}
@@ -200,7 +203,7 @@ async function getDefaultConfig() {
 // 生成远程路径
 function generateRemotePath(item: FileTransferConfigItem, sourcePath: string) {
 	let rootPath = getRootPath()
-	return path.posix.join(item.type !== "ftp" ? item.remotePath : "/", path.relative(rootPath, sourcePath));
+	return path.posix.join(item.type !== "ftp" ? item.remotePath : "/", posixRelative(rootPath, sourcePath));
 }
 
 // 上传文件任务
@@ -231,6 +234,19 @@ async function compareFileTask(item: FileTransferConfigItem, sourcePath: string)
 	});
 }
 
+/**
+ * 判断给定路径是否属于「正在重命名中的资料夹」的子路径。
+ * 用于过滤 onDidCreate / onDidChange 中因资料夹重命名而连带触发的子档案事件。
+ */
+function isInRenamingFolder(fsPath: string): boolean {
+	for (const prefix of renamingFolderPrefixes) {
+		if (fsPath === prefix || fsPath.startsWith(prefix)) {
+			return true;
+		}
+	}
+	return false;
+}
+
 // 注册文件创建监听器
 function initFileEvents(context: vscode.ExtensionContext): void {
 	let rootPath = getRootPath()
@@ -247,8 +263,13 @@ function initFileEvents(context: vscode.ExtensionContext): void {
 	// const fileWatcher = vscode.workspace.createFileSystemWatcher('**/*');
 	context.subscriptions.push(
 		fileWatcher.onDidCreate(async (uri) => {
-			console.log(`创建了：${uri.fsPath}`)
+			oConsole.log(`创建了：${uri.fsPath}`)
 			if (renamingFiles.has(uri.fsPath)) {
+				return;
+			}
+
+			// 过滤资料夹重命名产生的子档案 create 事件
+			if (isInRenamingFolder(uri.fsPath)) {
 				return;
 			}
 
@@ -269,10 +290,16 @@ function initFileEvents(context: vscode.ExtensionContext): void {
 	)
 
 	fileWatcher.onDidChange((uri) => {
-		console.log(`修改了：${uri.fsPath}`)
+		oConsole.log(`修改了：${uri.fsPath}`)
 		if (saveFiles.has(uri.fsPath)) {
 			return;
 		}
+
+		// 过滤资料夹重命名产生的子档案 change 事件
+		if (isInRenamingFolder(uri.fsPath)) {
+			return;
+		}
+
 		if (uri.fsPath.indexOf(rootPath) == -1) return
 		if (fs.lstatSync(uri.fsPath).isDirectory()) {
 			let opType = {
@@ -319,7 +346,7 @@ function initFileEvents(context: vscode.ExtensionContext): void {
 	context.subscriptions.push(
 		vscode.workspace.onWillDeleteFiles(async (e) => {
 			for (const v of e.files) {
-				console.log(`删除了：${v.fsPath}`)
+				oConsole.log(`删除了：${v.fsPath}`)
 				if (v.fsPath.indexOf(rootPath) == -1) continue
 				if (fs.lstatSync(v.fsPath).isDirectory()) {
 					let opType = {
@@ -352,13 +379,31 @@ function initFileEvents(context: vscode.ExtensionContext): void {
 		vscode.workspace.onWillRenameFiles((event) => {
 			const { files } = event
 			for (const v of files) {
-				console.log(`重命名了：${v.oldUri} 为 ${v.newUri}`)
+				oConsole.log(`重命名了：${v.oldUri} 为 ${v.newUri}`)
 				if (v.oldUri.fsPath.indexOf(rootPath) == -1) continue
+
+				const isDir = isDirectory.sync(v.oldUri.fsPath);
 
 				// 记录将要被重命名的文件或文件夹
 				renamingFiles.add(v.newUri.fsPath);
+
+				// 若为资料夹，额外记录新旧路径前缀，用于过滤子档案的 create/change 事件
+				if (isDir) {
+					const oldPrefix = v.oldUri.fsPath + path.sep;
+					const newPrefix = v.newUri.fsPath + path.sep;
+					renamingFolderPrefixes.add(oldPrefix);
+					renamingFolderPrefixes.add(newPrefix);
+					// 同时将新资料夹路径本身也加入（onDidCreate 会对资料夹本身也触发）
+					renamingFolderPrefixes.add(v.newUri.fsPath);
+				}
+
 				setTimeout(() => {
 					renamingFiles.delete(v.newUri.fsPath)
+					if (isDir) {
+						renamingFolderPrefixes.delete(v.oldUri.fsPath + path.sep);
+						renamingFolderPrefixes.delete(v.newUri.fsPath + path.sep);
+						renamingFolderPrefixes.delete(v.newUri.fsPath);
+					}
 				}, 10000);
 
 				let opType = {
@@ -366,7 +411,7 @@ function initFileEvents(context: vscode.ExtensionContext): void {
 					type: "file",
 					newname: v.newUri.fsPath
 				}
-				if (isDirectory.sync(v.oldUri.fsPath)) {
+				if (isDir) {
 					opType.type = "directory"
 				}
 				saveChangeFile(context, v.oldUri.fsPath, opType)
@@ -531,7 +576,7 @@ async function saveChangeFile(
 let debounceSave = debounce(async (document) => {
 	let rootPath = getRootPath()
 	let context = getContext()
-	console.log(`保存了文件`, document)
+	oConsole.log(`保存了文件`, document)
 
 	// 记录将要被重命名的文件或文件夹
 	saveFiles.add(document.uri.fsPath);

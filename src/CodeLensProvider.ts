@@ -3,7 +3,7 @@ import * as path from "path"
 import * as fs from "fs-extra"
 import * as vscode from "vscode"
 import { parseTree, Node, getNodeValue, applyEdits, modify, format } from "jsonc-parser"
-import { getPluginSetting, getRootPath, generateRandomPassword } from "./utils"
+import { getPluginSetting, getRootPath, generateRandomPassword, oConsole } from "./utils"
 import { l10n } from "vscode"
 var CryptoJS = require("crypto-js")
 
@@ -51,7 +51,7 @@ class JsonCodeLensProvider implements vscode.CodeLensProvider {
         )
       })
     } catch (e) {
-      console.error("sync_config.jsonc " + l10n.t('fileFormatError'))
+      oConsole.error("sync_config.jsonc " + l10n.t('fileFormatError'))
     } finally {
       return codeLenses
     }
@@ -154,7 +154,7 @@ export async function handleEncryptionOrDecryption(
       ])
     }
   } catch (error) {
-    console.log(error)
+    oConsole.log(error)
     error && vscode.window.showErrorMessage(error?.toString())
   }
 }

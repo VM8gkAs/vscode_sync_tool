@@ -1,10 +1,23 @@
-﻿# FTP/SFTP/SSH 同步  
+# FTP/SFTP/SSH 同步  
 
 > 快速代碼同步工具  
 
 [🔥 下載地址](https://marketplace.visualstudio.com/items?itemName=oorzc.ssh-tools)  
 
-##  Supported Languages
+## Supported Languages
+
+- [English](../../README.md)
+- [简体中文](README.zh-CN.md)
+- [Español](README.es.md)
+- [Français](README.fr.md)
+- [Deutsch](README.de.md)
+- [Italiano](README.it.md)
+- [한국어](README.ko.md)
+- [Português](README.pt.md)
+- [Pусский](README.ru.md)
+- [Türkçe](README.tr.md)
+- [Polski](README.pl.md)
+- [日本語](README.ja.md)
 
 ## ✨ 插件功能  
 
@@ -59,6 +72,10 @@
          "build": "yarn build:test", // 構建命令（選填）  
          "compress": true, // 上傳前壓縮檔案  
          "deleteRemote": false, // 上傳前刪除遠端目錄  
+         "syncFileTime": false, // 上傳後是否同步遠端檔案時間（使用本地檔案時間），預設 false
+         "skipIfSame": true, // 上傳前檢查遠端檔案是否相同，相同則跳過，預設 true
+         "skipCompareMode": "size+mtime", // 跳過比對標準："size+mtime"（預設）、"size"、"mtime"
+         "uploadDelay": 0, // 最後一次修改後延遲上傳秒數（防抖），預設 0（即時上傳）
          "remotePath": "/www/wwwroot/test", // SFTP/SSH 伺服器路徑  
          "excludePath": [], // 排除規則（與 .gitignore 合併）  
          "default": true // 設為預設環境  
@@ -92,11 +109,11 @@ Please configure authentication: [privateKeyPath] (preferred) or [password]
 ```
 
 ```js
-// excludePath、downloadExcludePath 排除规则，支持通配符
+// excludePath、downloadExcludePath 排除規則，支援萬用字元
 [
    "**/*.mp4",
    "aaa/bbb", //排除aaa/bbb
-   "!aaa/bbb/ccc", //不排除aaa/bbb下面的ccc文件夹
+   "!aaa/bbb/ccc", //不排除aaa/bbb下面的ccc資料夾
 ]
 ```
 
@@ -108,35 +125,34 @@ Please configure authentication: [privateKeyPath] (preferred) or [password]
 
 ![比對演示](https://cdn.jsdelivr.net/gh/oorzc/public_img@main/img/2024%2F11%2F12%2F6cbd149ae7959c8097ce288fb91ed800.gif)  
 
+## Build Commands
+
+```bash
+# 安裝相依套件
+npm install
+
+# 開發模式（watch 增量編譯）
+npm run watch
+
+# 生產環境打包（輸出 dist/extension.js）
+npm run package
+
+# 打包 VSIX（輸出 ssh-tools-<version>.vsix）
+npx @vscode/vsce package --no-dependencies
+```
+
+- `npm run package` 僅建置 extension bundle，不會產生 `.vsix` 檔案。
+- `npm run vscepackage` 需要全域安裝 `vsce`；若未安裝，建議使用 `npx @vscode/vsce package --no-dependencies`。
+
 ## 溫馨提示  
 
-1. 如果您無法連接服務器，可以嘗試使用其他連接工具，比如xftp、filezilla等工具連接服務器，沒有問題之後再嘗試連接。
-2. 上傳文件後，如果樹級菜單沒有更新，可以使用右鍵菜單，刷新文件樹。
-3. 為什麼重複打開文件時，沒有從服務器下載文件？為了節省資源，插件會緩存已打開文件。如果需要更新文件，請使用右鍵菜單，刷新即可。
-4. 為什麼無法解密用戶名或密碼？您的密鑰已修改，請重新填寫初始賬戶密碼，再加密解密。
-5. 每次編輯配置文件，都會自動停止所有任務。因此在上傳期間，請不要隨意修改配置文件。
+1. 如果您無法連接伺服器，可以嘗試使用其他連接工具，比如 xftp、filezilla 等工具連接伺服器，沒有問題之後再嘗試連接。
+2. 上傳檔案後，如果樹狀選單沒有更新，可以使用右鍵選單，刷新檔案樹。
+3. 為什麼重複打開檔案時，沒有從伺服器下載檔案？為了節省資源，插件會快取已打開的檔案。如果需要更新檔案，請使用右鍵選單，刷新即可。
+4. 為什麼無法解密用戶名或密碼？您的密鑰已修改，請重新填寫初始帳戶密碼，再加密解密。
+5. 每次編輯配置檔案，都會自動停止所有任務。因此在上傳期間，請不要隨意修改配置檔案。
 
 ## 問題回報  
 
 此為社群驅動的專案，若有問題請在此回報：  
-## Build Commands
-
-~~~bash
-# install dependencies
-npm install
-
-# development watch build
-npm run watch
-
-# production build (output: dist/extension.js)
-npm run package
-
-# package VSIX (output: ssh-tools-<version>.vsix)
-npx @vscode/vsce package --no-dependencies
-~~~
-
-- npm run package only builds the extension bundle, it does not generate a .vsix file.
-- npm run vscepackage requires globally installed vsce; if not installed, prefer npx @vscode/vsce package --no-dependencies.
 [提交問題](https://github.com/oorzc/vscode_sync_tool/issues)  
-
-

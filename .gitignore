@@ -10,7 +10,8 @@ dist
 node_modules
 *.vsix
 
-# local VS Code test
+# local VS Code
+.vscode/
 .vscode-test/
 
 # types

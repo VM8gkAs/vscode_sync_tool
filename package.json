@@ -3,7 +3,7 @@
   "displayName": "FTP/SFTP/SSH Sync Tool",
   "publisher": "oorzc",
   "description": "%SyncTools.title%",
-  "version": "0.6.0",
+  "version": "0.6.1",
   "icon": "static/logo_new.png",
   "engines": {
     "vscode": "^1.73.0"
@@ -494,4 +494,4 @@
     "strip-json-comments": "^5.0.1",
     "uuid": "^11.0.3"
   }
-}
+}

@@ -32,6 +32,8 @@ Current recommendation: **do not force-change in build path yet**.
 ## Decision log
 
 - 2026-02-25: Introduced explicit scripts `typecheck` and `typecheck:strict`.
+- 2026-04-21: Audit confirmed `npx tsc --noEmit` passes with zero errors under current settings.
+  Both `transpileOnly` and `skipLibCheck` remain appropriate for day-to-day builds.
 - If `typecheck:strict` becomes stable for multiple releases, consider:
   - setting `skipLibCheck` to `false`, and/or
   - removing `transpileOnly` with a measured build-time impact evaluation.

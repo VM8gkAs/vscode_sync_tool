@@ -1,6 +1,6 @@
 const isDirectory = require("is-directory")
 import path from "path"
-import { getAllowFiles, getRootPath, verityConfig, isUpRoot } from "../utils"
+import { getAllowFiles, getRootPath, verityConfig, isUpRoot, posixRelative } from "../utils"
 import * as vscode from "vscode"
 import { opType, FileTransferConfigItem } from "../types/config"
 import FileTransfer from "../FileTransfer"
@@ -12,17 +12,15 @@ export const uploadOnSave = async (
 	opType: opType
 ) => {
 	let rootPath = getRootPath()
-	let fileTransfer = new FileTransfer(config)
-	let client = await fileTransfer.getClient(config, true)
-	if (!client) return
+	new FileTransfer(config)
 	try {
 		const { type } = config
 		await verityConfig(config)
-		let remoteFilePath = path.relative(rootPath, file)
+		let remoteFilePath = posixRelative(rootPath, file)
 		if (type != 'ftp') {
-			remoteFilePath = path.join(
+			remoteFilePath = path.posix.join(
 				config.remotePath,
-				path.relative(rootPath, file)
+				posixRelative(rootPath, file)
 			)
 		}
 		switch (opType.op) {
@@ -35,16 +33,16 @@ export const uploadOnSave = async (
 					return
 				}
 				// 重命名文件
-				let remotePath = path.relative(rootPath, opType.newname)
-				let localPath = path.relative(rootPath, file)
+				let remotePath = posixRelative(rootPath, opType.newname)
+				let localPath = posixRelative(rootPath, file)
 				if (config.type !== 'ftp') {
-					remotePath = path.join(
+					remotePath = path.posix.join(
 						config.remotePath,
-						path.relative(rootPath, opType.newname)
+						posixRelative(rootPath, opType.newname)
 					)
-					localPath = path.join(
+					localPath = path.posix.join(
 						config.remotePath,
-						path.relative(rootPath, file)
+						posixRelative(rootPath, file)
 					)
 				}
 				await FileTransfer.addTask({
@@ -70,8 +68,6 @@ export const uploadOnSave = async (
 	} catch (err) {
 		let msg = `[${config.name}][${config.type}][上传失败]`;
 		vscode.window.showErrorMessage(`${msg}：${err?.toString()}`)
-	} finally {
-		fileTransfer.releaseClient(client, config)
 	}
 
 	//上传文件
@@ -94,14 +90,14 @@ export const uploadOnSave = async (
 			if (files && files.length) {
 				for (const vv of files) {
 					if (up_to_root) {
-						remotePath = path.join(
+						remotePath = path.posix.join(
 							newRemotePath,
-							path.relative(rootPath, vv)
+							posixRelative(rootPath, vv)
 						)
 					} else {
-						remotePath = path.relative(
-							config.type !== 'ftp' ? config.remotePath : "",
-							path.relative(rootPath, vv)
+						remotePath = path.posix.join(
+							config.type !== 'ftp' ? config.remotePath : "/",
+							posixRelative(rootPath, vv)
 						)
 					}
 					await FileTransfer.addTask({

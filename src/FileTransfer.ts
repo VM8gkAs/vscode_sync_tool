@@ -10,7 +10,7 @@ import { l10n } from 'vscode';
 import * as vscode from "vscode"
 import { EventEmitter } from 'events';
 import { FileTransferConfigItem, Task, TargetTypes, proxyConfigType } from "./types/config";
-import { getRootPath, getAllowFiles, isUpRoot, formatFileSize, getUseTime, getPluginSetting, sleep, getNormalPath, isIgnore } from './utils';
+import { getRootPath, getAllowFiles, isUpRoot, formatFileSize, getUseTime, getPluginSetting, sleep, getNormalPath, isIgnore, oConsole, posixRelative } from './utils';
 import { SocksClient } from "socks";
 import { SocksProxyType } from "socks/typings/common/constants";
 import { getContext } from "./config/globals";
@@ -114,6 +114,23 @@ export default class FileTransfer extends EventEmitter {
                             }
                         }
 
+                        // skipIfSame: 上傳前檢查遠端檔案是否相同，相同則跳過
+                        if (task.operationType === 'upload' && !task.isDirectory && task.localPath && fs.existsSync(task.localPath)) {
+                            const fileStat = fs.statSync(task.localPath);
+                            if (fileStat.isFile()) {
+                                const normalizedRemotePath = getNormalPath(task.remotePath);
+                                if (await this.shouldSkipUpload(client, task, normalizedRemotePath)) {
+                                    await this.releaseClient(client, task.config);
+                                    this.addMaxConcurrency(task.config);
+                                    if (!FileTransfer.queues[task.config.name].length() && FileTransfer.queues[task.config.name].running() === 1) {
+                                        this.allTaskCompleted(task.config)
+                                    }
+                                    callback && callback();
+                                    return;
+                                }
+                            }
+                        }
+
                         // 根据任务类型决定执行何种操作
                         switch (task.operationType) {
                             case 'upload':
@@ -178,14 +195,14 @@ export default class FileTransfer extends EventEmitter {
                             task.retries ? task.retries++ : task.retries = 1;  // 增加重试次数
                             // console.error(`Error during ${task.operationType} of ${task.localPath} to ${task.remotePath}:`, err);
                             if (task.retries < maxRetries) {
-                                console.log(`Retrying (${task.retries}/${maxRetries})...`);
+                                oConsole.log(`Retrying (${task.retries}/${maxRetries})...`);
                                 msg = `[${l10n.t('Retry')} (${task.retries}/${maxRetries})] ${err}`
                                 task.error = `${msg}`
                                 updateTaskProgress();
                                 await sleep(2000);
                                 await executeTask(task);  // 递归调用以进行重试
                             } else {
-                                console.error(`Task failed after ${maxRetries} retries.`);
+                                oConsole.error(`Task failed after ${maxRetries} retries.`);
                                 task.error = `${err}`
                                 updateTaskProgress();
 
@@ -206,7 +223,7 @@ export default class FileTransfer extends EventEmitter {
 
             // 所有任务完成
             FileTransfer.queues[configItem.name].drain(() => {
-                console.log(`${[configItem.name]} 所有任务已完成`);
+                oConsole.log(`${[configItem.name]} 所有任务已完成`);
                 // this.allTaskCompleted(configItem)
             });
 
@@ -256,9 +273,9 @@ export default class FileTransfer extends EventEmitter {
             for (const [k, v] of Object.entries(FileTransfer.queues)) {
                 // 如果任务队列不为空，则跳过清理
                 if (v.length() !== 0) {
-                    return;
+                    continue;
                 }
-                console.log("清理连接池中....");
+                oConsole.log("清理连接池中....");
 
                 // 循环清理所有 FTP 连接池
                 await FileTransfer.cleanupConnectionPool(FileTransfer.ftpConnectionPools[k], 'ftp' as TargetTypes);
@@ -269,19 +286,30 @@ export default class FileTransfer extends EventEmitter {
     }
 
     // 清理连接池，判断连接是否可用，再移除
-    static async cleanupConnectionPool(pool: any[], type: TargetTypes): Promise<void> {
+    static async cleanupConnectionPool(pool: any[], type: TargetTypes, maxIdle: number = Infinity): Promise<void> {
+        // 先移除超出闲置上限的多余连线（从尾端开始移除最旧的）
+        while (pool.length > maxIdle) {
+            const excess = pool.shift();
+            if (excess) {
+                try {
+                    await (type === 'ftp' ? excess.close() : excess.end());
+                } catch { /* connection already dead, safe to ignore */ }
+            }
+        }
+
         for (let i = pool.length - 1; i >= 0; i--) {
             const client = pool[i];
             try {
                 // 检查 FTP 或 SFTP 连接是否仍然活跃
                 await (type === 'ftp' ? client.pwd() : client.cwd());
-                console.log(`Connection is still active, keeping in pool.`);
+                oConsole.log(`Connection is still active, keeping in pool.`);
             } catch (err) {
                 // 如果检测失败，说明连接不可用，移除连接
-                console.log(`Connection is not active, cleaning up ${type} connection.`);
+                oConsole.log(`Connection is not active, cleaning up ${type} connection.`);
                 pool.splice(i, 1);
-                // 关闭不可用连接
-                await (type === 'ftp' ? client.close() : client.end());
+                try {
+                    await (type === 'ftp' ? client.close() : client.end());
+                } catch { /* connection already closed or broken, safe to ignore */ }
             }
         }
     }
@@ -363,7 +391,9 @@ export default class FileTransfer extends EventEmitter {
             } catch (err) {
                 // 清理连接防止内存泄漏
                 if (client) {
-                    await (config.type === 'ftp' ? client.close() : client.end());
+                    try {
+                        await (config.type === 'ftp' ? client.close() : client.end());
+                    } catch { /* already closed or broken, safe to ignore */ }
                 }
 
                 // 显示错误信息
@@ -378,7 +408,7 @@ export default class FileTransfer extends EventEmitter {
         return client;
     }
 
-    // 释放连接
+    // 释放连接回连接池
     async releaseClient(client: any, config: FileTransferConfigItem, errorOccurred = false) {
         if (!client || errorOccurred) return;
 
@@ -390,16 +420,25 @@ export default class FileTransfer extends EventEmitter {
                 await client.cwd();
             }
 
-            // 将连接放回连接池
-            if (config.type === 'ftp') {
-                FileTransfer.ftpConnectionPools[config.name].push(client);
-            } else {
-                FileTransfer.sftpConnectionPools[config.name].push(client);
+            // 检查连接池是否已达闲置上限，超出则直接关闭而非放回
+            const pool = config.type === 'ftp'
+                ? FileTransfer.ftpConnectionPools[config.name]
+                : FileTransfer.sftpConnectionPools[config.name];
+
+            if (pool.length >= this.maxConnections) {
+                oConsole.log(`Pool for ${config.name} is full (${pool.length}/${this.maxConnections}), closing connection instead of returning to pool.`);
+                try {
+                    await (config.type === 'ftp' ? client.close() : client.end());
+                } catch { /* already closed, safe to ignore */ }
+                return;
             }
+
+            pool.push(client);
         } catch (err) {
-            console.log('Connection check failed, removing connection:', err);
-            // 关闭连接
-            await (config.type === 'ftp' ? client.close() : client.end());
+            oConsole.log('Connection check failed, removing connection:', err);
+            try {
+                await (config.type === 'ftp' ? client.close() : client.end());
+            } catch { /* connection already dead, safe to ignore */ }
         }
     }
 
@@ -410,7 +449,7 @@ export default class FileTransfer extends EventEmitter {
      */
     private async shouldSkipUpload(client: any, task: Task, remotePath: string): Promise<boolean> {
         const { config } = task;
-        if (!config.skipIfSameSize) return false;
+        if (!config.skipIfSame) return false;
         if (task.isDirectory || !task.localPath || !fs.existsSync(task.localPath)) return false;
 
         try {
@@ -419,6 +458,7 @@ export default class FileTransfer extends EventEmitter {
 
             const localSize = localStat.size;
             const localMtime = Math.floor(localStat.mtimeMs / 1000);
+            const compareMode = config.skipCompareMode || 'size+mtime';
 
             let remoteSize: number | null = null;
             let remoteMtime: number | null = null;
@@ -447,116 +487,121 @@ export default class FileTransfer extends EventEmitter {
                 } catch { /* file doesn't exist */ }
             }
 
-            if (remoteSize !== null && remoteMtime !== null) {
-                if (remoteSize === localSize && remoteMtime === localMtime) {
-                    const time = dayjs().format('YYYY-MM-DD HH:mm:ss');
-                    addLogTask(`[${time}][${config.name}][${config.type}][skipUpload]: ${remotePath} (size=${localSize}, mtime=${localMtime})`);
-                    return true;
-                }
+            let shouldSkip = false;
+            switch (compareMode) {
+                case 'size+mtime':
+                    shouldSkip = remoteSize !== null && remoteMtime !== null && remoteSize === localSize && remoteMtime === localMtime;
+                    break;
+                case 'size':
+                    shouldSkip = remoteSize !== null && remoteSize === localSize;
+                    break;
+                case 'mtime':
+                    shouldSkip = remoteMtime !== null && remoteMtime === localMtime;
+                    break;
+            }
+
+            if (shouldSkip) {
+                const time = dayjs().format('YYYY-MM-DD HH:mm:ss');
+                addLogTask(`[${time}][${config.name}][${config.type}][skipUpload]: ${remotePath} (size=${localSize}, mtime=${localMtime}, mode=${compareMode})`);
+                return true;
             }
         } catch {
-            // 讀取失敗不跳過，繼續上傳
+            // skip comparison failed (e.g. remote file not found or stat error), proceed with normal upload
         }
         return false;
     }
 
     async uploadFile(client: any, task: Task): Promise<void> {
         let { localPath, remotePath, config, useZip, isDirectory } = task;
-        return new Promise(async (resolve, reject) => {
-            try {
-                let remoteDirPath = path.dirname(remotePath);
-                // 检查文件夹是否存在
-                await this.checkExistFolder(task.config, client, remoteDirPath)
-                const fileStat = fs.statSync(task.localPath);
-                task.fileSize = fileStat.size
-                task.isDirectory = fileStat.isDirectory()
-                task.fileSizeText = formatFileSize(task.fileSize)
+        let remoteDirPath = path.dirname(remotePath);
+        // 检查文件夹是否存在
+        await this.checkExistFolder(task.config, client, remoteDirPath)
+        const fileStat = fs.statSync(task.localPath);
+        task.fileSize = fileStat.size
+        task.isDirectory = fileStat.isDirectory()
+        task.fileSizeText = formatFileSize(task.fileSize)
 
-                // skipIfSameSize: 檢查遠端檔案是否相同，相同則跳過上傳
-                const normalizedRemotePath = getNormalPath(remotePath);
-                if (!task.isDirectory && await this.shouldSkipUpload(client, task, normalizedRemotePath)) {
-                    task.progress = 100;
-                    task.useTime = '0.00';
-                    resolve();
-                    return;
+        // skipIfSame: 已在 executeTask 中完成檢查，此處不再重複
+
+        // 开始传输
+        if (config.type === "ftp") {
+            if (task.isDirectory) {
+                await this.uploadFolder(task)
+            } else {
+                // FTP 无法上传 0 byte 档案，使用暂存档避免修改原始本地档案
+                let uploadPath = localPath;
+                let tempFile: string | null = null;
+                if (task.fileSize === 0) {
+                    tempFile = localPath + '.ftp_tmp';
+                    fs.writeFileSync(tempFile, " ");
+                    uploadPath = tempFile;
                 }
 
-                // 开始上传
-                if (config.type === "ftp") {
-                    if (task.isDirectory) {
-                        await this.uploadFolder(task)
-                    } else {
-                        // 检查文件是否为空
-                        if (task.fileSize === 0) {
-                            // 向空文件中写入一个空格字符
-                            fs.writeFileSync(localPath, " ")
+                try {
+                    client.trackProgress((info: any) => {
+                        if (info.type == 'upload') {
+                            if (!task.fileSize) {
+                                task.useTime = getUseTime(task.start)
+                                task.progress = 100
+                            } else {
+                                const progress = Math.min(parseFloat(((info.bytes / task.fileSize) * 100).toFixed(2)), 100);
+                                oConsole.log(`上传进度: ${progress}% (${info.bytes} / ${task.fileSize} 字节)`);
+                                task.progress = progress
+                                if (progress >= 100 || !info.bytes) {
+                                    task.useTime = getUseTime(task.start)
+                                }
+                            }
+                            updateTaskProgress();
                         }
-
-                        client.trackProgress((info: any) => {
-                            if (info.type == 'upload') {
-                                if (!task.fileSize) {
-                                    task.useTime = getUseTime(task.start)
-                                    task.progress = 100
-                                } else {
-                                    const progress = Math.min(parseFloat(((info.bytes / task.fileSize) * 100).toFixed(2)), 100);
-                                    console.log(`上传进度: ${progress}% (${info.bytes} / ${task.fileSize} 字节)`);
-                                    task.progress = progress
-                                    if (progress >= 100 || !info.bytes) {
-                                        task.useTime = getUseTime(task.start)
-                                    }
-                                }
-                                updateTaskProgress();
-                            }
-                        });
-                        remotePath = getNormalPath(remotePath)
-                        await client.uploadFrom(localPath, remotePath)
-                        client.trackProgress()
-                        await this.syncRemoteFileTime(client, task, remotePath)
-                    }
-                } else {
-                    if (isDirectory) {
-                        await this.uploadFolder(task)
-                    } else {
-                        const readStream = fs.createReadStream(task.localPath, { start: 0 })
-                        remotePath = getNormalPath(remotePath)
-                        await client.fastPut(readStream.path, remotePath, {
-                            flags: "r+",
-                            autoClose: true,
-                            step: async (transferred: number, chunk: any, total: number) => {
-                                // console.log(`已传输: ${transferred}/${total} 字节`)
-                                task.progress = Math.min(parseFloat(((transferred / total) * 100).toFixed(2)), 100);
-                                // task.localPath.includes(this.rootPath) && updateUploadStatus(true, `${[task.operationType]}: ${path.relative(this.rootPath, task.localPath)} ${task.progress}%`)
-                                if (task.progress >= 100 && !task.end) {
-                                    task.useTime = getUseTime(task.start)
-                                }
-                                updateTaskProgress();
-                            }
-                        })
-                        await this.syncRemoteFileTime(client, task, remotePath)
+                    });
+                    remotePath = getNormalPath(remotePath)
+                    await client.uploadFrom(uploadPath, remotePath)
+                    client.trackProgress()
+                    await this.syncRemoteFileTime(client, task, remotePath)
+                } finally {
+                    // 清理暂存档
+                    if (tempFile && fs.existsSync(tempFile)) {
+                        fs.unlinkSync(tempFile);
                     }
                 }
-
-                // 是否使用压缩上传
-                if (useZip) {
-                    // 是否远程解压
-                    if (config.type == 'ssh' && task.config.remote_unpacked) {
-                        await this.UnzipFile(client, task.config, localPath, remotePath)
-                    }
-                    //是否删除远程压缩文件
-                    if (task.config.delete_remote_compress) {
-                        await this.deleteFile(client, task, false);
-                    }
-                    //删除本地压缩文件
-                    if (task.config.delete_local_compress && fs.existsSync(localPath)) {
-                        fs.unlinkSync(localPath)
-                    }
-                }
-                resolve()
-            } catch (err) {
-                console.error(`Error upload file: ${err}`);
-                reject(err);
             }
-        });
+        } else {
+            if (isDirectory) {
+                await this.uploadFolder(task)
+            } else {
+                remotePath = getNormalPath(remotePath)
+                await client.fastPut(task.localPath, remotePath, {
+                    flags: "r+",
+                    autoClose: true,
+                    step: async (transferred: number, chunk: any, total: number) => {
+                        // oConsole.log(`已传输 ${transferred}/${total} 字节`)
+                        task.progress = Math.min(parseFloat(((transferred / total) * 100).toFixed(2)), 100);
+                        // task.localPath.includes(this.rootPath) && updateUploadStatus(true, `${[task.operationType]}: ${path.relative(this.rootPath, task.localPath)} ${task.progress}%`)
+                        if (task.progress >= 100 && !task.end) {
+                            task.useTime = getUseTime(task.start)
+                        }
+                        updateTaskProgress();
+                    }
+                })
+                await this.syncRemoteFileTime(client, task, remotePath)
+            }
+        }
+
+        // 是否使用压缩上传
+        if (useZip) {
+            // 是否远程解压
+            if (config.type == 'ssh' && task.config.remote_unpacked) {
+                await this.UnzipFile(client, task.config, localPath, remotePath)
+            }
+            //是否删除远程压缩文件
+            if (task.config.delete_remote_compress) {
+                await this.deleteFile(client, task, false);
+            }
+            //删除本地压缩文件
+            if (task.config.delete_local_compress && fs.existsSync(localPath)) {
+                fs.unlinkSync(localPath)
+            }
+        }
     }
 
     private formatFtpMfmtTime(date: Date): string {
@@ -761,12 +806,10 @@ export default class FileTransfer extends EventEmitter {
                 const finalDeltaMs = verifyTime.getTime() - targetTime.getTime();
                 if (Math.abs(finalDeltaMs) > 1000) {
                     this.logSyncFileTime(task, `${remotePath} remaining delta ${finalDeltaMs}ms (local=${targetTime.toISOString()}, remote=${verifyTime.toISOString()})`);
-                    console.warn(`[syncFileTime][${config.name}] ${remotePath}: remaining delta ${finalDeltaMs}ms`);
                 }
             }
         } catch (err) {
             this.logSyncFileTime(task, `${remotePath} failed: ${err}`);
-            console.warn(`[syncFileTime][${config.name}] ${remotePath}: ${err}`);
         }
     }
 
@@ -804,7 +847,7 @@ export default class FileTransfer extends EventEmitter {
                         reject(`${l10n.t('Decompression failed')}: ${v}`)
                     }
                 }).catch((err: any) => {
-                    console.error(`解压失败: ${remotePath}`, err);
+                    oConsole.error(`解压失败: ${remotePath}`, err);
                     reject(`${l10n.t('Decompression failed')}: ${remotePath}`)
                 });
         });
@@ -860,7 +903,7 @@ export default class FileTransfer extends EventEmitter {
                                 }, 3000);
                             } else {
                                 const progress = Math.min(parseFloat(((info.bytes / fileSize) * 100).toFixed(2)), 100);
-                                console.log(`下载进度: ${progress}% (${info.bytes} / ${fileSize} 字节)`);
+                                oConsole.log(`下载进度: ${progress}% (${info.bytes} / ${fileSize} 字节)`);
                                 task.progress = progress
                                 if (progress >= 100 || !info.bytes) {
                                     delete this.existFileSize[info.name]
@@ -879,7 +922,7 @@ export default class FileTransfer extends EventEmitter {
                     // 下载文件
                     await client.fastGet(task.remotePath, task.localPath, {
                         step: async (transferred: number, chunk: any, total: number) => {
-                            console.log(`已传输: ${transferred}/${total} 字节`);
+                            oConsole.log(`已传输: ${transferred}/${total} 字节`);
                             let progress = Math.min(parseFloat(((transferred / total) * 100).toFixed(2)), 100);
                             task.progress = progress
                             if (progress >= 100) {
@@ -894,7 +937,7 @@ export default class FileTransfer extends EventEmitter {
                 }
             }
         } catch (err) {
-            console.error(`Error downloading file: ${err}`);
+            oConsole.error(`Error downloading file: ${err}`);
             throw err;
         }
     }
@@ -904,7 +947,7 @@ export default class FileTransfer extends EventEmitter {
         try {
             const list = await client.list(remotePath); // 列出远程文件
             for (const item of list) {
-                let remoteFilePath = path.join(remotePath, item.name);
+                let remoteFilePath = path.posix.join(remotePath, item.name);
                 const localFilePath = path.join(localPath, item.name);
 
                 if (item.isDirectory) {
@@ -920,7 +963,7 @@ export default class FileTransfer extends EventEmitter {
                 }
             }
         } catch (err) {
-            console.error(`FTP 下载文件出错: ${err}`);
+            oConsole.error(`FTP 下载文件出错: ${err}`);
             throw err;
         }
     }
@@ -929,7 +972,7 @@ export default class FileTransfer extends EventEmitter {
         try {
             const list = await client.list(remotePath); // 列出远程文件
             for (const item of list) {
-                let remoteFilePath = path.join(remotePath, item.name);
+                let remoteFilePath = path.posix.join(remotePath, item.name);
                 const localFilePath = path.join(localPath, item.name);
 
                 if (item.type === 'd') { // 检查是否是目录
@@ -945,7 +988,7 @@ export default class FileTransfer extends EventEmitter {
                 }
             }
         } catch (err) {
-            console.error(`SFTP 下载文件出错: ${err}`);
+            oConsole.error(`SFTP 下载文件出错: ${err}`);
             throw err;
         }
     }
@@ -1024,7 +1067,7 @@ export default class FileTransfer extends EventEmitter {
             }
             return
         } catch (err) {
-            console.error(`Error renaming file: ${err}`);
+            oConsole.error(`Error renaming file: ${err}`);
             throw err;
         }
     }
@@ -1094,7 +1137,7 @@ export default class FileTransfer extends EventEmitter {
             task.useTime = getUseTime(task.start)
             return
         } catch (err) {
-            console.error(`Error deleting file: ${err}`);
+            oConsole.error(`Error deleting file: ${err}`);
             throw err;
         }
     }
@@ -1119,7 +1162,7 @@ export default class FileTransfer extends EventEmitter {
                         : FileTransfer.sftpConnectionPools[config.name];
 
                     if (pool.length >= this.maxConnections + queue.running()) {
-                        console.log(`Max connections of ${this.maxConnections} already achieved.`);
+                        oConsole.log(`Max connections of ${this.maxConnections} already achieved.`);
                         break;
                     }
 
@@ -1132,16 +1175,16 @@ export default class FileTransfer extends EventEmitter {
                     await Promise.all(arr.map(client => this.releaseClient(client, config)));
 
                     if (queue.concurrency < this.maxConnections) {
-                        console.log(`Increasing concurrency...`);
+                        oConsole.log(`Increasing concurrency...`);
                         queue.concurrency++;
                         FileTransfer.maxConnectionsMap[config.name] = queue.concurrency;
                     } else {
-                        console.log(`Connection pool not filled. Current pool length: ${queue.concurrency}`);
+                        oConsole.log(`Connection pool not filled. Current pool length: ${queue.concurrency}`);
                         testSuccess = false; // 强制退出
                     }
 
                 } catch (e) {
-                    console.error(`Error during connection:`, e);
+                    oConsole.error(`Error during connection:`, e);
                     testSuccess = false; // 遇到错误，退出循环
                 }
 
@@ -1152,7 +1195,7 @@ export default class FileTransfer extends EventEmitter {
                 }
             }
 
-            console.log(`Final connection pool length: ${(config.type === "ftp")
+            oConsole.log(`Final connection pool length: ${(config.type === "ftp")
                 ? FileTransfer.ftpConnectionPools[config.name].length
                 : FileTransfer.sftpConnectionPools[config.name].length}`);
 
@@ -1236,7 +1279,7 @@ export default class FileTransfer extends EventEmitter {
 
     //清空缓存
     clearCache = async (config: FileTransferConfigItem) => {
-        console.log("清空缓存");
+        oConsole.log("清空缓存");
         // 获取 workspaceState 对象
         const workspaceState = this.context.workspaceState
         let cache_key = config.name + "###" + this.rootPath
@@ -1270,7 +1313,7 @@ export default class FileTransfer extends EventEmitter {
             }
         } catch (error) {
             // 捕获并处理异常
-            console.error("Failed to add task to queue:", error);
+            oConsole.error("Failed to add task to queue:", error);
         }
     }
 }
