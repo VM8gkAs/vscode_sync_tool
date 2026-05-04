@@ -22,8 +22,8 @@
   "Is this the default configuration": "Bu varsayılan yapılandırma mı?",
   "Used for right-click upload and remote file comparison": "Sağ tıklayarak yükleme ve uzak dosya karşılaştırması için kullanılır",
   "Please select configuration (checked is true, unchecked is false)": "Lütfen yapılandırmayı seçin (işaretli true, işaretsiz false)",
-  "sync_config.jsonc configuration file format error!": "sync_config.jsonc yapılandırma dosyası formatı hatası!",
-  "Configuration file created: sync_config.jsonc": "Yapılandırma dosyası oluşturuldu: sync_config.jsonc",
+  "{0} configuration file format error!": "{0} yapılandırma dosyası biçim hatası!",
+  "Configuration file created: {0}": "Yapılandırma dosyası oluşturuldu: {0}",
   "Please enter git commit message": "Lütfen git commit mesajını girin",
   "Git commit failed, please commit manually": "Git commit işlemi başarısız oldu, lütfen manuel olarak commit yapın",
   "No git commit information was entered": "Git commit bilgisi girilmedi!",
@@ -85,5 +85,13 @@
   "theEncryptedDataCannotBeEmpty": "Şifrelenmiş veri boş olamaz!",
   "theSecretKeyFileDoesNotExist": "secretKey dosyası bulunamadı, lütfen kontrol edin!",
   "thePluginHasExpiredPleaseDownloadTheLatestVersion": "Eklentinin süresi doldu, lütfen en son sürümü indirin!",
-  "noFilesThatNeedToBeCompressed": "Sıkıştırılması gereken dosya bulunamadı. Lütfen yükleme ayarlarının doğru olup olmadığını kontrol edin!"
+  "noFilesThatNeedToBeCompressed": "Sıkıştırılması gereken dosya bulunamadı. Lütfen yükleme ayarlarının doğru olup olmadığını kontrol edin!",
+  "Migrate": "Taşı",
+  "Keep in project root": "Proje kök dizininde tut",
+  "Detected config file in project root. Migrate to the configured external directory?": "Proje kök dizininde yapılandırma dosyası algılandı. Yapılandırılmış harici dizine taşınsın mı?",
+  "Config file migrated to: {0}": "Yapılandırma dosyası şuraya taşındı: {0}",
+  "Select config store directory": "Yapılandırma depolama dizinini seç",
+  "Config store path is already using project root": "Yapılandırma depolama yolu zaten proje kökünü kullanıyor",
+  "Keep in external directory": "Harici dizinde tut",
+  "Migrate config file back to project root?": "Yapılandırma dosyası proje köküne geri taşınsın mı?"
 }

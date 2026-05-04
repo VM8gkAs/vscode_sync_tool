@@ -1,6 +1,6 @@
-const SftpClient = require("./lib/ssh2-sftp-client/index")
-const ftp = require("basic-ftp-proxy")
-const proxySocket = require("basic-ftp-proxy/dist/proxySocket")
+import SftpClient from "ssh2-sftp-client"
+import * as ftp from "basic-ftp-proxy"
+import * as proxySocket from "basic-ftp-proxy/dist/proxySocket"
 
 import fs from "fs-extra"
 import path from 'path';
@@ -10,7 +10,8 @@ import { l10n } from 'vscode';
 import * as vscode from "vscode"
 import { EventEmitter } from 'events';
 import { FileTransferConfigItem, Task, TargetTypes, proxyConfigType } from "./types/config";
-import { getRootPath, getAllowFiles, isUpRoot, formatFileSize, getUseTime, getPluginSetting, sleep, getNormalPath, isIgnore } from './utils';
+import { getRootPath, getAllowFiles, isUpRoot, formatFileSize, getUseTime, getPluginSetting, sleep, getNormalPath, isIgnore, deepClone } from './utils';
+import { TASK_COMPLETE_UI_DELAY_MS, ALL_TASKS_COMPLETE_DELAY_MS, NO_UPLOAD_COOLDOWN_MS, CONNECTION_POOL_CLEANUP_INTERVAL_MS } from './config/config';
 import { SocksClient } from "socks";
 import { SocksProxyType } from "socks/typings/common/constants";
 import { getContext } from "./config/globals";
@@ -25,7 +26,14 @@ EventEmitter.setMaxListeners(99999)
 
 // 文件传输类
 export default class FileTransfer extends EventEmitter {
-    static instance: FileTransfer;
+    private static mutexByName: Record<string, Mutex> = {};
+    static getMutexForConfig(name: string): Mutex {
+        if (!FileTransfer.mutexByName[name]) {
+            FileTransfer.mutexByName[name] = new Mutex();
+        }
+        return FileTransfer.mutexByName[name];
+    }
+
     static ftpConnectionPools: { [key: string]: any[] } = {}; // ftp连接池
     static sftpConnectionPools: { [key: string]: any[] } = {}; // sftp连接池
     static queues: { [key: string]: async.QueueObject<any> } = {}; // 用于存储每个 configItem.name 的任务队列
@@ -56,10 +64,7 @@ export default class FileTransfer extends EventEmitter {
         this.uploadTaskNumber = uploadTaskNumber;
         this.maxConnections = uploadConcurrentLimit;
         this.context = getContext();
-        // this.setMaxListeners(999);
-        this.mutex = new Mutex();  // 初始化锁
-        // 确保共享实例
-        FileTransfer.instance = this;
+        this.mutex = FileTransfer.getMutexForConfig(configItem.name);
         this.existCreateDir[configItem.name] = new Set();
 
         // 初始化连接池
@@ -88,7 +93,7 @@ export default class FileTransfer extends EventEmitter {
                 const executeTask = async (task: Task) => {
                     try {
                         client = await this.getClient(task.config);
-                        if (task.config.type == 'ftp') await client.cd("/")
+                        if (task.config.type == 'ftp') await client.ensureDir(task.config.remotePath)
                         this.configItem = task.config;
                         this.addTaskLog(task)
 
@@ -148,7 +153,7 @@ export default class FileTransfer extends EventEmitter {
                         }
 
                         if (task.compare && !task.isDirectory) {
-                            let localPath = path.join(this.rootPath, path.relative(task.config.type == 'ftp' ? "/" : task.config.remotePath, task.remotePath))
+                            let localPath = path.join(this.rootPath, path.relative(task.config.remotePath, task.remotePath))
                             // 执行对比命令
                             vscode.commands.executeCommand('vscode.diff', vscode.Uri.file(task.localPath), vscode.Uri.file(localPath), `${l10n.t('Local file')} ↔ ${l10n.t('Remote file')}: ${path.relative(this.rootPath, localPath)}`);
                         }
@@ -223,12 +228,12 @@ export default class FileTransfer extends EventEmitter {
                 status: 'complete_sync',
                 type: 'refreshSyncStatus',
             })
-        }, 1500);
+        }, TASK_COMPLETE_UI_DELAY_MS);
         setTimeout(() => {
             let res = this.checkAllTaskCompleted()
             res && StatusBarUi.working(l10n.t('All tasks completed'));
             res && cleanLogTask()
-        }, 2500);
+        }, ALL_TASKS_COMPLETE_DELAY_MS);
     }
 
     checkAllTaskCompleted() {
@@ -265,7 +270,7 @@ export default class FileTransfer extends EventEmitter {
                 // 循环清理所有 SFTP 连接池
                 await FileTransfer.cleanupConnectionPool(FileTransfer.sftpConnectionPools[k], 'sftp' as TargetTypes);
             }
-        }, 60 * 1000); // 每分钟清理
+        }, CONNECTION_POOL_CLEANUP_INTERVAL_MS);
     }
 
     // 清理连接池，判断连接是否可用，再移除
@@ -293,7 +298,7 @@ export default class FileTransfer extends EventEmitter {
 
         if (!client) {
             try {
-                const configClone = JSON.parse(JSON.stringify(config))
+                const configClone = deepClone(config)
                 // 如果需要代理，通过 SocksClient 创建 socket
                 if (configClone.proxy) {
                     const proxyConfig = getPluginSetting().get<proxyConfigType>("proxyConfig");
@@ -315,12 +320,17 @@ export default class FileTransfer extends EventEmitter {
                             destination: { host: configClone.host, port: configClone.port },
                         });
 
-                        configClone.type === 'ftp'
-                            ? (client = new ftp.Client({
+                        if (configClone.type === 'ftp') {
+                            client = new ftp.Client({
                                 useInitialHost: true,
                                 buildSocket: () => proxySocket.create(proxyConfig.proxyHost, proxyConfig.proxyPort),
-                            }))
-                            : (configClone.sock = socket, client = new SftpClient());
+                            });
+                        } else {
+                            // 对于 SFTP，使用代理 socket 连接
+                            // ssh2 库需要 sock 属性，同时保留 host 和 port 用于 SSH 握手
+                            configClone.sock = socket;
+                            client = new SftpClient();
+                        }
                     } catch (err) {
                         throw new Error(l10n.t('Proxy connection failed, please check configuration:') + err?.toString());
                     }
@@ -490,7 +500,7 @@ export default class FileTransfer extends EventEmitter {
         if (files && files.length) {
             for (let vv of files) {
                 let remoteFile = path.posix.join("/", remotePath, path.relative(localPath, vv))
-                let newTask = JSON.parse(JSON.stringify(task))
+                let newTask = deepClone(task)
                 newTask.operationType = "upload"
                 newTask.localPath = vv
                 newTask.view = view
@@ -567,7 +577,7 @@ export default class FileTransfer extends EventEmitter {
                                 task.progress = 100
                                 setTimeout(() => {
                                     FileTransfer.noUploadFiles.delete(localPath)
-                                }, 3000);
+                                }, NO_UPLOAD_COOLDOWN_MS);
                             } else {
                                 const progress = Math.min(parseFloat(((info.bytes / fileSize) * 100).toFixed(2)), 100);
                                 console.log(`下载进度: ${progress}% (${info.bytes} / ${fileSize} 字节)`);
@@ -577,7 +587,7 @@ export default class FileTransfer extends EventEmitter {
                                     task.useTime = getUseTime(task.start)
                                     setTimeout(() => {
                                         FileTransfer.noUploadFiles.delete(localPath)
-                                    }, 3000);
+                                    }, NO_UPLOAD_COOLDOWN_MS);
                                 }
                             }
                             updateTaskProgress();
@@ -596,7 +606,7 @@ export default class FileTransfer extends EventEmitter {
                                 task.useTime = getUseTime(task.start)
                                 setTimeout(() => {
                                     FileTransfer.noUploadFiles.delete(localPath)
-                                }, 3000);
+                                }, NO_UPLOAD_COOLDOWN_MS);
                             }
                             updateTaskProgress();
                         }
@@ -614,14 +624,14 @@ export default class FileTransfer extends EventEmitter {
         try {
             const list = await client.list(remotePath); // 列出远程文件
             for (const item of list) {
-                let remoteFilePath = path.join(remotePath, item.name);
+                let remoteFilePath = path.posix.join(remotePath, item.name);
                 const localFilePath = path.join(localPath, item.name);
 
                 if (item.isDirectory) {
                     // 递归处理子目录
                     await this.downloadFilesFromFTP(client, remoteFilePath, localFilePath, task);
                 } else {
-                    let obj = JSON.parse(JSON.stringify(task));
+                    let obj = deepClone(task);
                     obj.localPath = localFilePath
                     obj.remotePath = remoteFilePath
                     obj.operationType = "download"
@@ -639,14 +649,14 @@ export default class FileTransfer extends EventEmitter {
         try {
             const list = await client.list(remotePath); // 列出远程文件
             for (const item of list) {
-                let remoteFilePath = path.join(remotePath, item.name);
+                let remoteFilePath = path.posix.join(remotePath, item.name);
                 const localFilePath = path.join(localPath, item.name);
 
                 if (item.type === 'd') { // 检查是否是目录
                     // 递归处理子目录
                     await this.downloadFilesFromSFTP(client, remoteFilePath, localFilePath, task);
                 } else {
-                    let obj = JSON.parse(JSON.stringify(task));
+                    let obj = deepClone(task);
                     obj.localPath = localFilePath
                     obj.remotePath = remoteFilePath
                     obj.operationType = "download"
@@ -689,8 +699,6 @@ export default class FileTransfer extends EventEmitter {
             let exists = false
             // 检查文件是否存在
             if (config.type === "ftp") {
-                oldPath = path.posix.join("/", oldPath)
-                newPath = path.posix.join("/", newPath)
                 exists = await this.existFTPFile(client, oldPath)
             } else {
                 exists = await client.exists(oldPath);
@@ -706,7 +714,7 @@ export default class FileTransfer extends EventEmitter {
                 if (!fs.existsSync(task.localPath)) {
                     localPath = path.posix.join(
                         this.rootPath,
-                        path.relative(config.type == 'ftp' ? "" : task.config.remotePath, newPath)
+                        path.relative(task.config.remotePath, newPath)
                     )
                 }
                 // 判断是文件还是文件夹
@@ -716,12 +724,11 @@ export default class FileTransfer extends EventEmitter {
                 } else {
                     //判断文件夹是否存在
                     let dirName = path.dirname(newPath)
-                    dirName = config.type == 'ftp' ? path.posix.join("/", dirName) : dirName
                     await this.checkExistFolder(task.config, client, dirName)
 
-                    let newTask = JSON.parse(JSON.stringify(task))
+                    let newTask = deepClone(task)
                     newTask.localPath = localPath
-                    newTask.remotePath = config.type == 'ftp' ? path.posix.join("/", newPath) : newPath
+                    newTask.remotePath = newPath
                     newTask.operationType = "upload"
                     FileTransfer.addTask(newTask)
                 }
@@ -949,8 +956,11 @@ export default class FileTransfer extends EventEmitter {
     }
 
     static async addTask(task: Task, lock: boolean = false) {
-        const instance = FileTransfer.instance;
-        const queue = FileTransfer.queues[task.config.name]; // 根据 config.name 获取对应的队列
+        const queue = FileTransfer.queues[task.config.name];
+        if (!queue) {
+            console.error(`[FileTransfer] No queue for config "${task.config.name}". Create FileTransfer for this config first.`);
+            return;
+        }
         task.remotePath = getNormalPath(task.remotePath)
 
         myEvent.fire({
@@ -959,21 +969,19 @@ export default class FileTransfer extends EventEmitter {
             type: 'refreshSyncStatus',
         })
 
+        const mutex = FileTransfer.getMutexForConfig(task.config.name);
         try {
             if (lock) {
-                // 如果需要锁，获取锁并执行任务
-                const release = await instance.mutex.acquire();
+                const release = await mutex.acquire();
                 try {
                     queue.push(task);
                 } finally {
-                    release();  // 确保任务执行完成后释放锁
+                    release();
                 }
             } else {
-                // 不需要锁的任务直接执行
                 queue.push(task);
             }
         } catch (error) {
-            // 捕获并处理异常
             console.error("Failed to add task to queue:", error);
         }
     }

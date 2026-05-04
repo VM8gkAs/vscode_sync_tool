@@ -28,6 +28,7 @@ export interface DeployConfigItem {
     username: string;
     password?: string;
     privateKeyPath?: string;
+    secretKeyPath?: string;
     proxy?: boolean;
     sock?: any;
     watch?: boolean;
@@ -49,6 +50,7 @@ export interface DeployConfigItem {
 }
 export interface FileTransferConfigItem extends DeployConfigItem {
     name: string;
+    workspaceRoot?: string;
     start?: string;
     end?: string;
     useTime?: string;

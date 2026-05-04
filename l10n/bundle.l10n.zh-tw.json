@@ -22,8 +22,8 @@
     "Is this the default configuration": "是否為預設配置",
     "Used for right-click upload and remote file comparison": "用於本地右鍵上傳和比對遠端檔案",
     "Please select configuration (checked is true, unchecked is false)": "請選擇配置（勾選為true，未勾選為false）",
-    "sync_config.jsonc configuration file format error!": "sync_config.jsonc配置檔案格式錯誤！",
-    "Configuration file created: sync_config.jsonc": "已建立配置檔案：sync_config.jsonc",
+    "{0} configuration file format error!": "{0} 設定檔格式錯誤！",
+    "Configuration file created: {0}": "已建立設定檔：{0}",
     "Please enter git commit message": "請輸入git提交訊息",
     "Git commit failed, please commit manually": "git提交失敗，請手動提交",
     "No git commit information was entered": "未輸入git提交訊息！",
@@ -85,5 +85,13 @@
     "theEncryptedDataCannotBeEmpty": "加密資料不能為空！",
     "theSecretKeyFileDoesNotExist": "secretKey 密鑰文件不存在，請檢查！",
     "thePluginHasExpiredPleaseDownloadTheLatestVersion": "插件已失效，請下載最新版！",
-    "noFilesThatNeedToBeCompressed": "沒有檢測到需要壓縮上傳的文件，請檢查上傳配置是否有誤！"
+    "noFilesThatNeedToBeCompressed": "沒有檢測到需要壓縮上傳的文件，請檢查上傳配置是否有誤！",
+    "Migrate": "遷移",
+    "Keep in project root": "保留在專案根目錄",
+    "Detected config file in project root. Migrate to the configured external directory?": "偵測到專案根目錄中存在設定檔，是否遷移到已設定的外部目錄？",
+    "Config file migrated to: {0}": "設定檔已遷移至：{0}",
+    "Select config store directory": "選擇配置檔案儲存目錄",
+    "Config store path is already using project root": "配置檔案儲存路徑已在使用專案根目錄",
+    "Keep in external directory": "保留在外部目錄",
+    "Migrate config file back to project root?": "是否將配置檔案遷回專案根目錄？"
 }

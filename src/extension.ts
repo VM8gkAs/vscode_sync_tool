@@ -4,8 +4,8 @@ import * as path from "path"
 import * as vscode from "vscode"
 import { l10n } from "vscode"
 import { FileTransferConfigItem, opType } from './types/config';
-import { CACHE_DIRNAME, URI_SCHEME } from './config/config';
-import { addConfig, getUserConfig, toArray, isIgnore, getRootPath, getIgnoreConfig, debounce, generateRandomPassword, getPluginSetting, sleep, showInformationMessage } from "./utils"
+import { CACHE_DIRNAME, URI_SCHEME, CONFIG_FILENAME } from './config/config';
+import { addConfig, getUserConfig, toArray, isIgnore, getRootPath, getIgnoreConfig, debounce, getPluginSetting, sleep, showInformationMessage, deepClone, getConfigFilePath, ensureConfigDir, clearConfigCache } from "./utils"
 import { uploadOnSave } from "./events/uploadOnSave"
 import { myEvent } from "./events/myEvent"
 import { DepNodeProvider } from "./treeProvider"
@@ -16,9 +16,8 @@ import { cleanLogTask, outputChannel } from "./output";
 import { StatusBarUi } from "./statusBar";
 import { Mutex } from 'async-mutex';
 import { CodeLensProvider, handleEncryptionOrDecryption } from "./CodeLensProvider"
-
-const isDirectory = require("is-directory")
-var CryptoJS = require("crypto-js")
+import type { SyncEvent } from "./events/myEvent"
+import isDirectory from "is-directory"
 
 let treeProvider: DepNodeProvider
 let TreeView: vscode.TreeView<vscode.TreeItem>
@@ -38,26 +37,45 @@ let saveFiles: Set<string> = new Set();
 
 // 激活事件
 export async function activate(context: vscode.ExtensionContext) {
-	// 获取当前时间的毫秒数
-	const milliseconds = new Date().getTime();
-	let time = CryptoJS.AES.decrypt('U2FsdGVkX196uw7MjNwzhzM5krwWTaEiXoT32XVjezc=', 'sync_tools').toString(CryptoJS.enc.Utf8)
-	if (time < milliseconds) {
-		return vscode.window.showInformationMessage(l10n.t('thePluginHasExpiredPleaseDownloadTheLatestVersion'))
-	}
-
 	// 在扩展启动时，将 context 设置为全局变量
 	setContext(context)
 
-	await context.workspaceState.update("sync_config", "")
+	clearConfigCache()
 	vscode.commands.executeCommand("setContext", "canEdit", false);
 
 	const provider = new MemFS();
 	context.subscriptions.push(vscode.workspace.registerFileSystemProvider(URI_SCHEME, provider, { isCaseSensitive: true }));
 
 	let rootPath = getRootPath()
+
+	// 配置文件迁移：当用户设置了外部存储路径时，自动迁移旧配置
+	if (rootPath) {
+		const configStorePath = getPluginSetting().get<string>("configStorePath") || "";
+		if (configStorePath) {
+			const oldPath = path.join(rootPath, CONFIG_FILENAME);
+			const newPath = getConfigFilePath(rootPath);
+			if (oldPath !== newPath && fs.existsSync(oldPath) && !fs.existsSync(newPath)) {
+				const migrate = l10n.t('Migrate');
+				const keep = l10n.t('Keep in project root');
+				const answer = await vscode.window.showInformationMessage(
+					l10n.t('Detected config file in project root. Migrate to the configured external directory?'),
+					migrate,
+					keep
+				);
+				if (answer === migrate) {
+					ensureConfigDir(newPath);
+					fs.moveSync(oldPath, newPath);
+					vscode.window.showInformationMessage(
+						l10n.t('Config file migrated to: {0}', newPath)
+					);
+				}
+			}
+		}
+	}
+
 	treeProvider = new DepNodeProvider()
 
-	let mutex = new Mutex();  // 初始化锁
+	let mutex = new Mutex();
 
 
 	// 注册树视图
@@ -71,26 +89,23 @@ export async function activate(context: vscode.ExtensionContext) {
 	// context.subscriptions.push(treeProvider);
 
 	// 监听自定义事件触发
-	myEvent.event(async (eventType: any) => {
-		if (eventType == 'update') {
+	myEvent.event(async (eventType: SyncEvent) => {
+		if (eventType === 'update') {
 			debouncedUpdateViewCount()
 		}
-		if (eventType == 'updateMenu') {
+		if (eventType === 'updateMenu') {
 			debouncedRefreshMenu()
 		}
-		if (typeof eventType == 'object') {
-			if (eventType.type == 'refreshNode') {
-				// 获取锁
+		if (typeof eventType === 'object') {
+			if (eventType.type === 'refreshNode') {
 				const release = await mutex.acquire();
 				try {
-					// 执行任务
 					await treeProvider.uploadComplete(eventType.task)
 				} finally {
-					// 释放锁
 					release();
 				}
 			}
-			if (eventType.type == 'refreshSyncStatus') {
+			if (eventType.type === 'refreshSyncStatus') {
 				treeProvider.updateSyncStatus(eventType.name, eventType.status)
 			}
 		}
@@ -110,9 +125,8 @@ export async function activate(context: vscode.ExtensionContext) {
 	)
 	context.subscriptions.push(handleAddConfig)
 
-	// 获取 workspaceState 对象
 	const workspaceState = context.workspaceState;
-	workspaceState.update("sync_config", "")
+	clearConfigCache()
 
 	// 注册清除所有缓存的命令
 	vscode.commands.registerCommand("sync_tools.clearAllCache", () => clearAllCache(workspaceState))
@@ -150,7 +164,7 @@ export async function activate(context: vscode.ExtensionContext) {
 	//打开项目设置
 	context.subscriptions.push(
 		vscode.commands.registerCommand('sync_tools.editConfig', async () => {
-			let configPath = path.join(rootPath, 'sync_config.jsonc')
+			let configPath = getConfigFilePath(rootPath)
 			if (!fs.existsSync(configPath)) return
 
 			const uri = vscode.Uri.file(configPath);
@@ -166,6 +180,81 @@ export async function activate(context: vscode.ExtensionContext) {
 	context.subscriptions.push(
 		vscode.commands.registerCommand('sync_tools.openPluginSetting', () => {
 			vscode.commands.executeCommand('workbench.action.openSettings', '@ext:oorzc.ssh-tools');
+		})
+	);
+
+	// 选择配置文件外部存储目录
+	context.subscriptions.push(
+		vscode.commands.registerCommand('sync_tools.selectConfigStorePath', async () => {
+			const current = getPluginSetting().get<string>("configStorePath") || "";
+			const uris = await vscode.window.showOpenDialog({
+				canSelectFiles: false,
+				canSelectFolders: true,
+				canSelectMany: false,
+				openLabel: l10n.t('Select config store directory'),
+				defaultUri: current ? vscode.Uri.file(current) : undefined,
+			});
+			if (!uris || !uris.length) return;
+			const selectedPath = uris[0].fsPath;
+			await getPluginSetting().update("configStorePath", selectedPath, vscode.ConfigurationTarget.Global);
+
+			const curRoot = getRootPath();
+			if (curRoot) {
+				const oldPath = path.join(curRoot, CONFIG_FILENAME);
+				const newPath = getConfigFilePath(curRoot);
+				if (oldPath !== newPath && fs.existsSync(oldPath) && !fs.existsSync(newPath)) {
+					const migrate = l10n.t('Migrate');
+					const keep = l10n.t('Keep in project root');
+					const answer = await vscode.window.showInformationMessage(
+						l10n.t('Detected config file in project root. Migrate to the configured external directory?'),
+						migrate,
+						keep
+					);
+					if (answer === migrate) {
+						ensureConfigDir(newPath);
+						fs.moveSync(oldPath, newPath);
+						vscode.window.showInformationMessage(l10n.t('Config file migrated to: {0}', newPath));
+					}
+				}
+				clearConfigCache(curRoot);
+				await getUserConfig(2, 2, curRoot);
+				await FileTransfer.closeAll();
+				myEvent.fire("updateMenu");
+			}
+		})
+	);
+
+	// 清除配置文件外部存储路径（恢复到项目根目录）
+	context.subscriptions.push(
+		vscode.commands.registerCommand('sync_tools.resetConfigStorePath', async () => {
+			const current = getPluginSetting().get<string>("configStorePath") || "";
+			if (!current) {
+				vscode.window.showInformationMessage(l10n.t('Config store path is already using project root'));
+				return;
+			}
+			const curRoot = getRootPath();
+			if (curRoot) {
+				const externalPath = getConfigFilePath(curRoot);
+				await getPluginSetting().update("configStorePath", "", vscode.ConfigurationTarget.Global);
+				const localPath = path.join(curRoot, CONFIG_FILENAME);
+				if (fs.existsSync(externalPath) && !fs.existsSync(localPath)) {
+					const migrate = l10n.t('Migrate');
+					const keep = l10n.t('Keep in external directory');
+					const answer = await vscode.window.showInformationMessage(
+						l10n.t('Migrate config file back to project root?'),
+						migrate,
+						keep
+					);
+					if (answer === migrate) {
+						fs.moveSync(externalPath, localPath);
+						vscode.window.showInformationMessage(l10n.t('Config file migrated to: {0}', localPath));
+					}
+				}
+				clearConfigCache(curRoot);
+				await getUserConfig(2, 2, curRoot);
+				await FileTransfer.closeAll();
+				myEvent.fire("updateMenu");
+			}
 		})
 	);
 
@@ -197,7 +286,7 @@ async function getDefaultConfig() {
 
 // 生成远程路径
 function generateRemotePath(item: FileTransferConfigItem, sourcePath: string) {
-	let rootPath = getRootPath()
+	let rootPath = item.workspaceRoot || getRootPath()
 	return path.posix.join(item.type !== "ftp" ? item.remotePath : "/", path.relative(rootPath, sourcePath));
 }
 
@@ -229,84 +318,47 @@ async function compareFileTask(item: FileTransferConfigItem, sourcePath: string)
 	});
 }
 
-// 注册文件创建监听器
+// 注册文件创建监听器（支持多工作区）
 function initFileEvents(context: vscode.ExtensionContext): void {
-	let rootPath = getRootPath()
-	if (!rootPath) return
+	const folders = vscode.workspace.workspaceFolders
+	if (!folders?.length) return
 
-	// 创建文件系统观察者
-	const directoryToWatch = vscode.Uri.file(rootPath);
-	const fileWatcher = vscode.workspace.createFileSystemWatcher(
-		// 指定要监听的目录路径
-		new vscode.RelativePattern(directoryToWatch, '**/*')
-	);
+	// 为每个工作区文件夹创建独立的文件系统观察者
+	for (const folder of folders) {
+		const folderRoot = folder.uri.fsPath;
+		const directoryToWatch = vscode.Uri.file(folderRoot);
+		const fileWatcher = vscode.workspace.createFileSystemWatcher(
+			new vscode.RelativePattern(directoryToWatch, '**/*')
+		);
 
-	// 创建文件系统观察者
-	// const fileWatcher = vscode.workspace.createFileSystemWatcher('**/*');
-	context.subscriptions.push(
-		fileWatcher.onDidCreate(async (uri) => {
-			console.log(`创建了：${uri.fsPath}`)
-			if (renamingFiles.has(uri.fsPath)) {
-				return;
+		context.subscriptions.push(
+			fileWatcher.onDidCreate(async (uri) => {
+				console.log(`创建了：${uri.fsPath}`)
+				if (renamingFiles.has(uri.fsPath)) return;
+				if (FileTransfer.noUploadFiles.has(uri.fsPath)) return;
+				let opType = {
+					op: "add",
+					type: "file"
+				}
+				if (isDirectory.sync(uri.fsPath)) {
+					opType.type = "directory"
+				}
+				saveChangeFile(context, uri.fsPath, opType)
+			})
+		)
+
+		fileWatcher.onDidChange((uri) => {
+			console.log(`修改了：${uri.fsPath}`)
+			if (saveFiles.has(uri.fsPath)) return;
+			if (fs.lstatSync(uri.fsPath).isDirectory()) {
+				saveChangeFile(context, uri.fsPath, { op: "add", type: "directory" })
+			} else {
+				saveChangeFile(context, uri.fsPath, { op: "add", type: "file" })
 			}
+		});
+	}
 
-			if (FileTransfer.noUploadFiles.has(uri.fsPath)) {
-				return
-			}
-
-			if (uri.fsPath.indexOf(rootPath) == -1) return
-			let opType = {
-				op: "add",
-				type: "file"
-			}
-			if (isDirectory.sync(uri.fsPath)) {
-				opType.type = "directory"
-			}
-			saveChangeFile(context, uri.fsPath, opType)
-		})
-	)
-
-	fileWatcher.onDidChange((uri) => {
-		console.log(`修改了：${uri.fsPath}`)
-		if (saveFiles.has(uri.fsPath)) {
-			return;
-		}
-		if (uri.fsPath.indexOf(rootPath) == -1) return
-		if (fs.lstatSync(uri.fsPath).isDirectory()) {
-			let opType = {
-				op: "add",
-				type: "directory"
-			}
-			saveChangeFile(context, uri.fsPath, opType)
-		} else {
-			let opType = {
-				op: "add",
-				type: "file"
-			}
-			saveChangeFile(context, uri.fsPath, opType)
-		}
-	});
-	// fileWatcher.onDidDelete((uri) => { });
-
-	// 注册添加文件的事件（已废弃，无法监听git拉取文件）
-	// context.subscriptions.push(
-	// 	vscode.workspace.onDidCreateFiles((event) => {
-	// 		const { files } = event
-	// 		files.forEach(async (file) => {
-	// 			console.log(`创建了：${file.fsPath}`)
-	// 			let opType = {
-	// 				op: "add",
-	// 				type: "file"
-	// 			}
-	// 			if (isDirectory.sync(file.fsPath)) {
-	// 				opType.type = "directory"
-	// 			}
-	// 			await saveChangeFile(context, file.fsPath, opType)
-	// 		})
-	// 	})
-	// )
-
-	// 修改文件监听器
+	// 修改文件监听器（全局事件，无需按文件夹区分）
 	context.subscriptions.push(
 		vscode.workspace.onDidSaveTextDocument((document) => {
 			debounceSave(document)
@@ -318,27 +370,12 @@ function initFileEvents(context: vscode.ExtensionContext): void {
 		vscode.workspace.onWillDeleteFiles(async (e) => {
 			for (const v of e.files) {
 				console.log(`删除了：${v.fsPath}`)
-				if (v.fsPath.indexOf(rootPath) == -1) continue
+				let fileRoot = getRootPath(v.fsPath)
+				if (!fileRoot) continue
 				if (fs.lstatSync(v.fsPath).isDirectory()) {
-					let opType = {
-						op: "delete",
-						type: "directory"
-					}
-					saveChangeFile(context, v.fsPath, opType)
-					// let files = await getAllFiles(v.fsPath)
-					// for (const vv of files) {
-					// 	let opType2 = {
-					// 		op: "delete",
-					// 		type: "file"
-					// 	}
-					// 	await saveChangeFile(context, vv, opType2)
-					// }
+					saveChangeFile(context, v.fsPath, { op: "delete", type: "directory" })
 				} else {
-					let opType = {
-						op: "delete",
-						type: "file"
-					}
-					saveChangeFile(context, v.fsPath, opType)
+					saveChangeFile(context, v.fsPath, { op: "delete", type: "file" })
 				}
 			}
 		})
@@ -346,14 +383,13 @@ function initFileEvents(context: vscode.ExtensionContext): void {
 
 	// 重命名监听器
 	context.subscriptions.push(
-		// vscode.workspace.onDidRenameFiles((event) => {
 		vscode.workspace.onWillRenameFiles((event) => {
 			const { files } = event
 			for (const v of files) {
 				console.log(`重命名了：${v.oldUri} 为 ${v.newUri}`)
-				if (v.oldUri.fsPath.indexOf(rootPath) == -1) continue
+				let fileRoot = getRootPath(v.oldUri.fsPath)
+				if (!fileRoot) continue
 
-				// 记录将要被重命名的文件或文件夹
 				renamingFiles.add(v.newUri.fsPath);
 				setTimeout(() => {
 					renamingFiles.delete(v.newUri.fsPath)
@@ -404,27 +440,26 @@ async function saveChangeFile(
 	const workspaceState = context.workspaceState
 
 	let rootPath = getRootPath(file)
+	// 仅处理项目内文件
+	if (!rootPath || !path.normalize(file).startsWith(rootPath + path.sep)) {
+		return
+	}
 	if (rootPath) {
-		// 如果是操作的根目录下面的配置文件
-		if (path.basename(file) == "sync_config.jsonc" || (opType.newname && path.basename(opType.newname) == "sync_config.jsonc")) {
-			//清空sync_config缓存
-			await workspaceState.update("sync_config", "")
+		const currentConfigPath = getConfigFilePath(rootPath);
+		if (file === currentConfigPath || (opType.newname && opType.newname === currentConfigPath)) {
+			clearConfigCache(rootPath)
 			await workspaceState.update("excludePath", "")
 			setTimeout(async () => {
-				//重新生成配置
-				await getUserConfig(2, 2)
-				//关闭连接
+				await getUserConfig(2, 2, rootPath)
 				await FileTransfer.closeAll()
-				// 刷新视图显示
 				myEvent.fire("updateMenu")
-
 			}, 100);
 			return
 		}
 
-		let config = await getUserConfig(2, 2)
+		let config = await getUserConfig(2, 2, rootPath)
 		if (config) {
-			let list = toArray(config)
+			let list = toArray(config, rootPath)
 			list.forEach(async (item, index) => {
 				if (path.basename(file) == ".gitignore") {
 					//清空忽略文件配置缓存
@@ -457,7 +492,7 @@ async function saveChangeFile(
 					if (typeof globalData === "object" && globalData !== null) {
 						data = globalData as Record<string, opType>
 						// 防止对同一个文件重复操作
-						let newOpType = JSON.parse(JSON.stringify(opType));
+						let newOpType = deepClone(opType);
 						if (data[file] && data[file].type == newOpType.type) {
 							if (data[file].op == 'add' && newOpType.op == 'delete') {
 								delete data[file]
@@ -511,15 +546,20 @@ let debounceSave = debounce(async (document) => {
 		saveFiles.delete(document.uri.fsPath)
 	}, 10000);
 
-	if (document.uri.fsPath.indexOf(rootPath) == -1) {
-		let pathArr = document.uri.fsPath.split(path.sep)
-		if (pathArr.length < 3) return
-		let config_name = pathArr[1]
-		let remotePath = pathArr.slice(3).join("/")
-		let localPath = pathArr.slice(4).join("/")
-		localPath = localPath ? localPath : remotePath
-		let filePath = path.join(os.tmpdir(), CACHE_DIRNAME, config_name, localPath)
-		await treeProvider.saveFile(config_name, document.getText(), filePath, remotePath)
+	if (document.uri.scheme === URI_SCHEME) {
+		const segments = document.uri.path.replace(/^\//, '').split('/')
+		if (segments.length < 3) return
+		const configName = segments[0]
+		const relPath = segments.slice(2).join('/')
+		const remotePath = '/' + relPath
+		const filePath = path.join(os.tmpdir(), CACHE_DIRNAME, configName, relPath)
+		await treeProvider.saveFile(configName, document.getText(), filePath, remotePath)
+		return
+	}
+
+	// 仅处理项目内文件，防止外部文件（如用户级 settings.json）被上传
+	const fileRoot = getRootPath(document.fileName)
+	if (!fileRoot || !path.normalize(document.fileName).startsWith(fileRoot + path.sep)) {
 		return
 	}
 

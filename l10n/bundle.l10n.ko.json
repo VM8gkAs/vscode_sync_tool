@@ -22,8 +22,8 @@
   "Is this the default configuration": "이것이 기본 구성입니까?",
   "Used for right-click upload and remote file comparison": "우클릭 업로드 및 원격 파일 비교에 사용됩니다.",
   "Please select configuration (checked is true, unchecked is false)": "구성을 선택하세요(체크된 경우 true, 체크되지 않은 경우 false).",
-  "sync_config.jsonc configuration file format error!": "sync_config.jsonc 구성 파일 형식 오류!",
-  "Configuration file created: sync_config.jsonc": "구성 파일이 생성되었습니다: sync_config.jsonc",
+  "{0} configuration file format error!": "{0} 구성 파일 형식 오류!",
+  "Configuration file created: {0}": "구성 파일이 생성되었습니다: {0}",
   "Please enter git commit message": "git 커밋 메시지를 입력하세요.",
   "Git commit failed, please commit manually": "git 커밋에 실패했습니다. 수동으로 커밋하세요.",
   "No git commit information was entered": "git 커밋 정보가 입력되지 않았습니다!",
@@ -85,5 +85,13 @@
   "theEncryptedDataCannotBeEmpty": "암호화된 데이터는 비어 있을 수 없습니다!",
   "theSecretKeyFileDoesNotExist": "secretKey 파일이 존재하지 않습니다. 확인해 주세요!",
   "thePluginHasExpiredPleaseDownloadTheLatestVersion": "플러그인이 만료되었습니다. 최신 버전을 다운로드하세요!",
-  "noFilesThatNeedToBeCompressed": "압축이 필요한 파일이 감지되지 않았습니다. 업로드 설정이 올바른지 확인하세요!"
+  "noFilesThatNeedToBeCompressed": "압축이 필요한 파일이 감지되지 않았습니다. 업로드 설정이 올바른지 확인하세요!",
+  "Migrate": "마이그레이션",
+  "Keep in project root": "프로젝트 루트에 유지",
+  "Detected config file in project root. Migrate to the configured external directory?": "프로젝트 루트에서 구성 파일이 감지되었습니다. 설정된 외부 디렉터리로 마이그레이션하시겠습니까?",
+  "Config file migrated to: {0}": "구성 파일이 다음으로 마이그레이션되었습니다: {0}",
+  "Select config store directory": "설정 파일 저장 디렉터리 선택",
+  "Config store path is already using project root": "설정 파일 저장 경로가 이미 프로젝트 루트를 사용 중입니다",
+  "Keep in external directory": "외부 디렉터리에 유지",
+  "Migrate config file back to project root?": "구성 파일을 프로젝트 루트로 다시 이동하시겠습니까?"
 }

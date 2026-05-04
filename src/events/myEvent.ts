@@ -1,5 +1,10 @@
 import * as vscode from 'vscode';
+import type { Task } from '../types/config';
 
-// 定义自定义事件
-export const myEvent = new vscode.EventEmitter();
+export type SyncEvent =
+	| 'update'
+	| 'updateMenu'
+	| { type: 'refreshNode'; nodePath: string; task: Task }
+	| { type: 'refreshSyncStatus'; name: string; status: string };
 
+export const myEvent = new vscode.EventEmitter<SyncEvent>();

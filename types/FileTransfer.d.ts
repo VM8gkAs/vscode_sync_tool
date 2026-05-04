@@ -5,7 +5,8 @@ import { EventEmitter } from 'events';
 import { FileTransferConfigItem, Task, TargetTypes } from "./types/config";
 import { Mutex } from 'async-mutex';
 export default class FileTransfer extends EventEmitter {
-    static instance: FileTransfer;
+    private static mutexByName;
+    static getMutexForConfig(name: string): Mutex;
     static ftpConnectionPools: {
         [key: string]: any[];
     };

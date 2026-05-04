@@ -1,3 +1,4 @@
+import * as crypto from "node:crypto"
 import fs from "fs-extra"
 import path from "path"
 import * as vscode from "vscode"
@@ -12,6 +13,7 @@ import * as jsonc from "jsonc-parser"
 // 文件排除
 import { minimatch } from "minimatch"
 import { getContext } from "./config/globals"
+import { CONFIG_FILENAME } from "./config/config"
 import dayjs = require("dayjs")
 
 
@@ -20,6 +22,15 @@ let systemLang: any = lang
 
 export function sleep(ms: number = 1000) {
 	return new Promise(resolve => setTimeout(resolve, ms));
+}
+
+/** 深拷贝配置/任务对象（优先 structuredClone） */
+export function deepClone<T>(obj: T): T {
+	const sc = (globalThis as { structuredClone?: <U>(v: U) => U }).structuredClone;
+	if (typeof sc === "function") {
+		return sc(obj);
+	}
+	return JSON.parse(JSON.stringify(obj)) as T;
 }
 
 export const oConsole = {
@@ -46,6 +57,48 @@ export const getPluginSetting = () => {
 	return vscode.workspace.getConfiguration("SyncTools")
 }
 
+/**
+ * 根据项目根路径生成唯一目录名：basename-shortHash
+ * 用于在外部存储目录下区分同名项目
+ */
+export function getProjectDirName(rootPath: string): string {
+	const base = path.basename(rootPath);
+	const hash = crypto.createHash("sha256").update(rootPath).digest("hex").substring(0, 6);
+	return `${base}-${hash}`;
+}
+
+/**
+ * 获取当前项目的配置文件完整路径
+ * - 若用户未设置 configStorePath，则使用项目根目录
+ * - 若设置了 configStorePath，则放在 configStorePath/projectDirName/ 下
+ */
+export function getConfigFilePath(rootPath?: string): string {
+	if (!rootPath) {
+		rootPath = getRootPath();
+	}
+	const configStorePath = getPluginSetting().get<string>("configStorePath") || "";
+	if (!configStorePath) {
+		return path.join(rootPath, CONFIG_FILENAME);
+	}
+	const externalPath = path.join(configStorePath, getProjectDirName(rootPath), CONFIG_FILENAME);
+	if (!fs.existsSync(externalPath)) {
+		const rootFilePath = path.join(rootPath, CONFIG_FILENAME);
+		if (fs.existsSync(rootFilePath)) {
+			return rootFilePath;
+		}
+	}
+	return externalPath;
+}
+
+/**
+ * 确保配置文件所在目录存在
+ */
+export function ensureConfigDir(configFilePath: string): void {
+	const dir = path.dirname(configFilePath);
+	if (!fs.existsSync(dir)) {
+		fs.mkdirSync(dir, { recursive: true });
+	}
+}
 
 // 询问对话框同步版
 export const showInformationMessage = (msg: string, confirmText = l10n.t('Confirm'), cancelText = l10n.t('Cancel')) => {
@@ -62,43 +115,27 @@ export const showInformationMessage = (msg: string, confirmText = l10n.t('Confir
 
 
 /**
- * 获取根路径
+ * 获取根路径；多工作区时若传入 file 则匹配包含该文件的工作区根目录
  */
 export function getRootPath(file: string = ""): string {
-	// 获取当前打开的工作区文件夹
-	let workspaceFolders = vscode.workspace.workspaceFolders
-	if (workspaceFolders && workspaceFolders.length) {
-		return workspaceFolders[0].uri.fsPath;
-	} else {
+	const workspaceFolders = vscode.workspace.workspaceFolders;
+	if (!workspaceFolders?.length) {
 		return "";
 	}
-
-	// if (workspaceFolders) {
-	// 	let rootPath = ""
-	// 	//根据当前文件区分工作区
-	// 	if (file) {
-	// 		if (workspaceFolders.length > 1) {
-	// 			rootPath = path.dirname(file)
-	// 			workspaceFolders.map((v) => {
-	// 				if (file.indexOf(v.uri.fsPath) != -1) {
-	// 					rootPath = v.uri.fsPath
-	// 				}
-	// 			})
-	// 		} else {
-	// 			let workPath = workspaceFolders[0].uri.fsPath
-	// 			if (isSubPath(file, workPath)) {
-	// 				rootPath = workPath
-	// 			} else {
-	// 				rootPath = path.dirname(file)
-	// 			}
-	// 		}
-	// 	} else {
-	// 		rootPath = workspaceFolders[0].uri.fsPath
-	// 	}
-	// 	return rootPath
-	// } else {
-	// 	return ""
-	// }
+	if (!file) {
+		return workspaceFolders[0].uri.fsPath;
+	}
+	const normalizedFile = path.normalize(file);
+	for (const folder of workspaceFolders) {
+		const root = folder.uri.fsPath;
+		if (normalizedFile === root || normalizedFile.startsWith(root + path.sep)) {
+			return root;
+		}
+	}
+	if (workspaceFolders.length === 1) {
+		return workspaceFolders[0].uri.fsPath;
+	}
+	return "";
 }
 
 /**
@@ -314,15 +351,15 @@ export const getIgnoreConfig = (
 
 		//数组去重
 		ignore_arr = [...new Set(ignore_arr)]
-		if (!ignore_arr.includes("sync_config.jsonc")) {
-			ignore_arr.push("sync_config.jsonc")
+		if (!ignore_arr.includes(CONFIG_FILENAME)) {
+			ignore_arr.push(CONFIG_FILENAME)
 		}
 		resolve(ignore_arr)
 	})
 }
 
 //将配置转化为数组
-export const toArray = (obj: { [x: string]: any }): FileTransferConfigItem[] => {
+export const toArray = (obj: { [x: string]: any }, rootPath?: string): FileTransferConfigItem[] => {
 	const arr = []
 	for (const key in obj) {
 		if (Object.prototype.hasOwnProperty.call(obj, key)) {
@@ -341,7 +378,8 @@ export const toArray = (obj: { [x: string]: any }): FileTransferConfigItem[] => 
 						deleteRemote: false
 					},
 					element
-				)
+				),
+				workspaceRoot: rootPath || ''
 			})
 		}
 	}
@@ -480,19 +518,19 @@ async function selectConfig(jsonText: string) {
 }
 
 function addGitignore(rootPath: string) {
+	const configFilePath = getConfigFilePath(rootPath);
+	const configInRoot = path.dirname(configFilePath) === rootPath;
+	if (!configInRoot) return;
+
 	let gitignorePath = path.join(rootPath, ".gitignore")
-	let data = ""
 	if (fs.existsSync(gitignorePath)) {
-		data = fs.readFileSync(gitignorePath, "utf-8")
-		// 去除注释并将结果转换为数组
+		let data = fs.readFileSync(gitignorePath, "utf-8")
 		let new_data = data
 			.split("\n")
 			.map((line: string) => line.trim())
 			.filter((line: string) => line && !line.startsWith("#"))
-		// 如果gitignore中不存在sync_config.jsonc则加入
-		const configFilepath = path.join(rootPath, "sync_config.jsonc")
-		if (fs.existsSync(configFilepath) && !new_data.includes("sync_config.jsonc")) {
-			fs.appendFileSync(gitignorePath, "\nsync_config.jsonc", 'utf-8')
+		if (fs.existsSync(configFilePath) && !new_data.includes(CONFIG_FILENAME)) {
+			fs.appendFileSync(gitignorePath, "\n" + CONFIG_FILENAME, 'utf-8')
 		}
 	}
 }
@@ -506,9 +544,9 @@ function addGitignore(rootPath: string) {
 export async function addConfig(rootPath: string) {
 	try {
 		let context = getContext();
-		// 获取 workspaceState 对象
 		const workspaceState = context.workspaceState
-		const filepath = path.join(rootPath, "sync_config.jsonc")
+		const filepath = getConfigFilePath(rootPath)
+		ensureConfigDir(filepath)
 		addGitignore(rootPath)
 		if (!fs.existsSync(filepath)) {
 			let updatedConfigData = await selectConfig(getExampleText())
@@ -523,21 +561,18 @@ export async function addConfig(rootPath: string) {
 			if (!updatedConfigData) {
 				return
 			}
-			// 写入更新后的配置文件
 			fs.writeFileSync(filepath, updatedConfigData, "utf8")
 		}
 
-		//打开配置文件
 		vscode.workspace.openTextDocument(filepath).then((document) => {
 			vscode.window.showTextDocument(document).then(() => {
-				// vscode.window.showInformationMessage(l10n.t('已创建配置文件：sync_config.jsonc'));
 			})
 		})
 
 		let data = fs.readFileSync(filepath, "utf-8")
 		if (data) {
 			let res = JSON.parse(stripJsonComments(data))
-			await workspaceState.update("sync_config", res)
+			await workspaceState.update("sync_config_" + rootPath, res)
 		}
 	} catch (error) {
 
@@ -555,14 +590,17 @@ export async function addConfig(rootPath: string) {
  */
 export async function getUserConfig(
 	type: number = 1,
-	showErr = 1
+	showErr = 1,
+	explicitRootPath?: string
 ) {
 	try {
 		let context = getContext()
-		let rootPath = getRootPath()
+		let rootPath = explicitRootPath || getRootPath()
+		const cacheKey = "sync_config_" + rootPath
 		// 获取 workspaceState 对象
 		const workspaceState = context.workspaceState
-		const value = workspaceState.get("sync_config")
+		const value = workspaceState.get(cacheKey)
+		console.log('[sync-tools] getUserConfig: rootPath =', rootPath, 'cacheKey =', cacheKey, 'cached =', !!value)
 		//  存在配置直接返回
 		if (value && type == 2) {
 			return value
@@ -573,7 +611,9 @@ export async function getUserConfig(
 			configData = JSON.parse(stripJsonComments(configText))
 		}
 
-		const filepath = path.join(rootPath, "sync_config.jsonc")
+		const filepath = getConfigFilePath(rootPath)
+		console.log('[sync-tools] getUserConfig: filepath =', filepath, 'exists =', fs.existsSync(filepath))
+		ensureConfigDir(filepath)
 		addGitignore(rootPath)
 		if (!fs.existsSync(filepath)) {
 			if (type < 2) {
@@ -585,7 +625,7 @@ export async function getUserConfig(
 				vscode.workspace.openTextDocument(filepath).then((document) => {
 					vscode.window.showTextDocument(document).then(() => {
 						vscode.window.showInformationMessage(
-							l10n.t('Configuration file created: sync_config.jsonc')
+							l10n.t('Configuration file created: {0}', CONFIG_FILENAME)
 						)
 					})
 				})
@@ -614,12 +654,14 @@ export async function getUserConfig(
 
 				if (res[v].remotePath) {
 					res[v].remotePath = getNormalPath(path.posix.join('/', res[v].remotePath))
+				} else {
+					res[v].remotePath = '/'
 				}
 
-				const deepCopy = JSON.parse(JSON.stringify(configData));
+				const deepCopy = deepClone(configData);
 				res[v] = Object.assign(deepCopy, res[v]);
 			})
-			await workspaceState.update("sync_config", res)
+			await workspaceState.update(cacheKey, res)
 			vscode.commands.executeCommand("setContext", "canEdit", true);
 
 			return res
@@ -630,10 +672,27 @@ export async function getUserConfig(
 
 		if (showErr) {
 			vscode.window.showInformationMessage(
-				l10n.t('sync_config.jsonc configuration file format error!')
+				l10n.t('{0} configuration file format error!', CONFIG_FILENAME)
 			)
 		}
 		return false
+	}
+}
+
+/** 清除指定 rootPath（或全部工作区）的配置缓存 */
+export function clearConfigCache(rootPath?: string) {
+	const context = getContext()
+	const workspaceState = context.workspaceState
+	if (rootPath) {
+		workspaceState.update("sync_config_" + rootPath, "")
+	} else {
+		const folders = vscode.workspace.workspaceFolders
+		if (folders) {
+			for (const folder of folders) {
+				workspaceState.update("sync_config_" + folder.uri.fsPath, "")
+			}
+		}
+		workspaceState.update("sync_config", "")
 	}
 }
 
@@ -1017,12 +1076,12 @@ export const getNormalPath = (remotePath: string) => {
 	return path.posix.normalize(remotePath).replace(/\\/g, "/")
 }
 
-// 生成随机密码字符串的函数
+/** 生成随机密钥字符串（密码学安全） */
 export function generateRandomPassword(length: number) {
-	const chars = 'ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789';
-	let result = '';
-	for (let i = 0; i < length; i++) {
-		result += chars.charAt(Math.floor(Math.random() * chars.length));
+	const n = Math.max(1, Math.floor(length));
+	let out = "";
+	while (out.length < n) {
+		out += crypto.randomBytes(16).toString("base64url").replace(/=/g, "");
 	}
-	return result;
+	return out.slice(0, n);
 }

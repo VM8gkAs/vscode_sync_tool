@@ -24,6 +24,8 @@
   "SyncTools.decrypt": "Decrypt",
   "SyncTools.generateSecretKey": "Generate Secret Key",
   "SyncTools.changeSecretKey": "Change Secret Key",
+  "SyncTools.selectConfigStorePath": "Select Config Store Directory",
+  "SyncTools.resetConfigStorePath": "Reset Config Store Path (Use Project Root)",
   "SyncTools.secretKey.description": "Used to encrypt the username and password in the configuration to prevent account leakage. \r\n\n ***Please note:*** Before changing the secret key, please decrypt the encrypted data in the configuration files of other projects, otherwise the decryption of other projects will fail! \r\n\n [Click here to generate a random secret key](command:sync_tools.generateSecretKey)",
   "SyncTools.add_config": "Add Configuration",
   "SyncTools.clearCache": "Clear Current Watch Cache",
@@ -37,5 +39,6 @@
   "SyncTools.openFileSizeLimit": "Prompt for opening files larger than the specified size, default is 5 Mb",
   "SyncTools.uploadTaskNumber": "Use concurrent upload when the number of uploads exceeds the specified value, default is 10",
   "SyncTools.uploadConcurrentLimit": "Upload concurrency configuration: Minimum concurrency is 1, maximum is 100, default is 3",
-  "SyncTools.proxyConfig.description": "[Configuration Document](https://www.npmjs.com/package/socks) \n\n Configuration reference: \n\n ```js \n{\n   \"proxyHost\": \"127.0.0.1\", // ipv4, ipv6 or hostname \n   \"proxyPort\": 7890, \n   \"proxyUsername\": \"\", // Used for SOCKS4 userId authentication, and SOCKS5 user/pass authentication in combination with password. \n   \"proxyPassword\": \"\", // Used in combination with userId for user/password authentication of SOCKS5 proxy. \n   \"proxyType\": 5 // Proxy version (4 or 5). Use 4 for v4a, use 5 for v5h. \n}\n ```"
+  "SyncTools.proxyConfig.description": "[Configuration Document](https://www.npmjs.com/package/socks) \n\n Configuration reference: \n\n ```js \n{\n   \"proxyHost\": \"127.0.0.1\", // ipv4, ipv6 or hostname \n   \"proxyPort\": 7890, \n   \"proxyUsername\": \"\", // Used for SOCKS4 userId authentication, and SOCKS5 user/pass authentication in combination with password. \n   \"proxyPassword\": \"\", // Used in combination with userId for user/password authentication of SOCKS5 proxy. \n   \"proxyType\": 5 // Proxy version (4 or 5). Use 4 for v4a, use 5 for v5h. \n}\n ```",
+  "SyncTools.configStorePath.description": "External directory path for storing configuration files. Use the command **Sync Tools: Select Config Store Directory** (`sync_tools.selectConfigStorePath`) to choose a directory via file picker. When set, the `sync_config.jsonc` file will be stored in `<this path>/<project name>-<hash>/sync_config.jsonc` instead of the project root directory. This prevents sensitive credentials from being accidentally committed to version control. Leave empty to use the project root (default behavior)."
 }

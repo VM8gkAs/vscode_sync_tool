@@ -22,8 +22,8 @@
   "Is this the default configuration": "これはデフォルトの設定ですか？",
   "Used for right-click upload and remote file comparison": "右クリックでのアップロードとリモートファイルの比較に使用されます",
   "Please select configuration (checked is true, unchecked is false)": "設定を選択してください（チェックが入っている場合はtrue、入っていない場合はfalse）",
-  "sync_config.jsonc configuration file format error!": "sync_config.jsonc設定ファイルの形式が正しくありません！",
-  "Configuration file created: sync_config.jsonc": "設定ファイルが作成されました：sync_config.jsonc",
+  "{0} configuration file format error!": "{0} 設定ファイルのフォーマットエラー！",
+  "Configuration file created: {0}": "設定ファイルを作成しました：{0}",
   "Please enter git commit message": "gitコミットメッセージを入力してください",
   "Git commit failed, please commit manually": "gitコミットに失敗しました。手動でコミットしてください",
   "No git commit information was entered": "gitコミット情報が入力されていません！",
@@ -85,5 +85,13 @@
   "theEncryptedDataCannotBeEmpty": "暗号化されたデータは空にできません！",
   "theSecretKeyFileDoesNotExist": "secretKeyファイルが存在しません。確認してください！",
   "thePluginHasExpiredPleaseDownloadTheLatestVersion": "プラグインが期限切れです。最新版をダウンロードしてください！",
-  "noFilesThatNeedToBeCompressed": "圧縮が必要なファイルが検出されませんでした。アップロード設定が正しいか確認してください！"
+  "noFilesThatNeedToBeCompressed": "圧縮が必要なファイルが検出されませんでした。アップロード設定が正しいか確認してください！",
+  "Migrate": "移行する",
+  "Keep in project root": "プロジェクトルートに保持",
+  "Detected config file in project root. Migrate to the configured external directory?": "プロジェクトルートに設定ファイルが検出されました。設定された外部ディレクトリに移行しますか？",
+  "Config file migrated to: {0}": "設定ファイルの移行先：{0}",
+  "Select config store directory": "設定ファイル保存ディレクトリを選択",
+  "Config store path is already using project root": "設定ファイルの保存パスは既にプロジェクトルートを使用しています",
+  "Keep in external directory": "外部ディレクトリに保持",
+  "Migrate config file back to project root?": "設定ファイルをプロジェクトルートに戻しますか？"
 }

@@ -24,6 +24,8 @@
   "SyncTools.decrypt": "Şifreyi Çöz",
   "SyncTools.generateSecretKey": "Gizli Anahtar Oluştur",
   "SyncTools.changeSecretKey": "Gizli Anahtarı Değiştir",
+  "SyncTools.selectConfigStorePath": "Yapılandırma depolama dizini seç",
+  "SyncTools.resetConfigStorePath": "Yapılandırma depolama yolunu sıfırla (proje kökünü kullan)",
   "SyncTools.secretKey.description": "Yapılandırmadaki kullanıcı adı ve şifreyi şifrelemek için kullanılır, hesap bilgilerinin泄露ını önler. \r\n\n ***Lütfen dikkat edin:*** Gizli anahtarı değiştirmeden önce, diğer proje yapılandırma dosyalarındaki şifrelenmiş verilerin şifresini çözün, aksi takdirde diğer projelerde şifre çözme başarısız olacaktır! \r\n\n [Rastgele gizli anahtar oluşturmak için tıklayın](command:sync_tools.generateSecretKey)",
   "SyncTools.add_config": "Yapılandırma Ekle",
   "SyncTools.clearCache": "Mevcut izleme önbelleğini temizle",
@@ -37,5 +39,6 @@
   "SyncTools.openFileSizeLimit": "Dosya açma boyutu sorusu, varsayılan olarak 5 Mb",
   "SyncTools.uploadTaskNumber": "Yükleme sayısı ne kadar olduğunda eşzamanlı yükleme kullanılacak, varsayılan olarak 10",
   "SyncTools.uploadConcurrentLimit": "Yükleme eşzamanlılık sınırı yapılandırması: Eşzamanlılık en az 1, en fazla 100, varsayılan olarak 3",
-  "SyncTools.proxyConfig.description": "[Yapılandırma dokümanı](https://www.npmjs.com/package/socks) \n\n Yapılandırma örneği: \n\n ```js \n{\n   \"proxyHost\": \"127.0.0.1\", // ipv4, ipv6 veya ana bilgisayar adı \n   \"proxyPort\": 7890, \n   \"proxyUsername\": \"\", // SOCKS4 userId kimlik doğrulaması için ve SOCKS5 kullanıcı/şifre kimlik doğrulaması için şifre ile birlikte kullanılır. \n   \"proxyPassword\": \"\", // SOCKS5 proxy için kullanıcı/şifre kimlik doğrulaması için userId ile birlikte kullanılır. \n   \"proxyType\": 5 // Proxy versiyonu (4 veya 5). v4a için 4, v5h için 5 kullanın. \n}\n ```"
+  "SyncTools.proxyConfig.description": "[Yapılandırma dokümanı](https://www.npmjs.com/package/socks) \n\n Yapılandırma örneği: \n\n ```js \n{\n   \"proxyHost\": \"127.0.0.1\", // ipv4, ipv6 veya ana bilgisayar adı \n   \"proxyPort\": 7890, \n   \"proxyUsername\": \"\", // SOCKS4 userId kimlik doğrulaması için ve SOCKS5 kullanıcı/şifre kimlik doğrulaması için şifre ile birlikte kullanılır. \n   \"proxyPassword\": \"\", // SOCKS5 proxy için kullanıcı/şifre kimlik doğrulaması için userId ile birlikte kullanılır. \n   \"proxyType\": 5 // Proxy versiyonu (4 veya 5). v4a için 4, v5h için 5 kullanın. \n}\n ```",
+  "SyncTools.configStorePath.description": "Yapılandırma dosyalarını depolamak için harici dizin yolu. Bir dizini dosya seçici ile seçmek için **Sync Tools: Yapılandırma depolama dizini seç** (`sync_tools.selectConfigStorePath`) komutunu kullanın. Ayarlandığında, `sync_config.jsonc` dosyası proje kök dizini yerine `<bu yol>/<proje adı>-<hash>/sync_config.jsonc` konumunda depolanır. Bu, hassas kimlik bilgilerinin yanlışlıkla sürüm kontrolüne gönderilmesini önler. Proje kök dizinini kullanmak için boş bırakın (varsayılan davranış)."
 }

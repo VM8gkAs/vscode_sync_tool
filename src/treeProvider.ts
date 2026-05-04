@@ -54,7 +54,7 @@ export class Dependency extends TreeItem {
 		this.description = this.description;
 		this.index = this.index;
 		this.parent = false;
-		this.realPath = path.posix.join(config.type == 'ftp' ? '/' : config.remotePath)
+		this.realPath = path.posix.join(config.remotePath)
 
 		const iconName = this.isRun ? "vm-active" : "vm-outline";
 		this.iconPath = new ThemeIcon(iconName);
@@ -62,6 +62,23 @@ export class Dependency extends TreeItem {
 	}
 }
 
+
+export class WorkspaceFolderNode extends TreeItem {
+	children: Dependency[] = [];
+	folderPath: string;
+	constructor(
+		public folderName: string,
+		public rootPath: string,
+		items: Dependency[]
+	) {
+		super(folderName, TreeItemCollapsibleState.Expanded);
+		this.folderPath = rootPath;
+		this.children = items;
+		this.iconPath = ThemeIcon.Folder;
+		this.contextValue = "workspace_folder";
+		this.tooltip = rootPath;
+	}
+}
 
 let deployInstance: Deploy
 
@@ -117,6 +134,8 @@ export class DepNodeProvider implements vscode.TreeDataProvider<TreeItem>, vscod
 	private rootPath: string;
 	private allNodes: { [key: string]: Dependency | RepositoryFileNode } = {}; // 使用对象结构存储节点
 	refreshTimer: string | number | NodeJS.Timeout | undefined;
+	private workspaceFolderNodes: WorkspaceFolderNode[] = [];
+	private isMultiRoot: boolean = false;
 
 
 	// rootPath 当前工作区根路径
@@ -125,6 +144,7 @@ export class DepNodeProvider implements vscode.TreeDataProvider<TreeItem>, vscod
 		this.items = []
 		this.context = getContext();
 		this.rootPath = getRootPath();
+		this.isMultiRoot = (vscode.workspace.workspaceFolders?.length || 0) > 1;
 		this.getMenu()
 		isDragging = false
 
@@ -554,7 +574,10 @@ export class DepNodeProvider implements vscode.TreeDataProvider<TreeItem>, vscod
 
 
 	refresh(status: boolean = false): void {
-		if (status) this.items = []
+		if (status) {
+			this.items = []
+			this.workspaceFolderNodes = []
+		}
 		this.getMenu()
 		this._onDidChangeTreeData.fire();
 	}
@@ -630,33 +653,50 @@ export class DepNodeProvider implements vscode.TreeDataProvider<TreeItem>, vscod
 	}
 
 	async getMenu() {
-		// 获取 workspaceState 对象
 		const workspaceState = this.context.workspaceState;
-		let config = await getUserConfig(2)
-		this.count = 0
-		if (config) {
-			this.items = []
-			const configList = toArray(config).map((item, index) => {
-				// 从 workspaceState 中读取数据
-				let cache_key = item.name + '###' + this.rootPath
+		const folders = vscode.workspace.workspaceFolders;
+		this.count = 0;
+		this.items = [];
+		this.workspaceFolderNodes = [];
+		this.isMultiRoot = (folders?.length || 0) > 1;
+
+		console.log('[sync-tools] getMenu: folders count =', folders?.length, 'isMultiRoot =', this.isMultiRoot);
+
+		if (!folders?.length) return;
+
+		let globalIndex = 0;
+
+		for (const folder of folders) {
+			const folderRoot = folder.uri.fsPath;
+			console.log('[sync-tools] getMenu: checking folder =', folderRoot);
+			const config = await getUserConfig(2, 2, folderRoot);
+			console.log('[sync-tools] getMenu: config for', folderRoot, '=', config ? Object.keys(config) : 'null/false');
+			if (!config || Object.keys(config).length === 0) continue;
+
+			const configList = toArray(config, folderRoot).map((item) => {
+				let cache_key = item.name + '###' + folderRoot;
 				let newGlobalData = workspaceState.get(cache_key);
-				// let tooltip = `服务器：${item.name} 地址：${item.config.host}`;
 				let tooltip = l10n.t('Server: {0}   Address: {1}', [item.name, item.host]);
 				let description = item.host;
 
 				if (typeof newGlobalData === 'object' && newGlobalData !== null) {
-					let count = Object.keys(newGlobalData).length
+					let count = Object.keys(newGlobalData).length;
 					if (count) {
 						tooltip = l10n.t('Server: {0}   Address: {1}   Not uploaded: {2}', [item.name, item.host, count]);
 						description = count ? `(${count}) ${item.host}` : `${item.host}`;
 					}
-					this.count += count
+					this.count += count;
 				}
-				return new Dependency(item, 0, tooltip, description, index);
+				return new Dependency(item, 0, tooltip, description, globalIndex++);
 			});
-			this.items = configList
-		} else {
-			this.items = []
+
+			this.items.push(...configList);
+
+			if (this.isMultiRoot) {
+				this.workspaceFolderNodes.push(
+					new WorkspaceFolderNode(folder.name, folderRoot, configList)
+				);
+			}
 		}
 	}
 
@@ -677,8 +717,14 @@ export class DepNodeProvider implements vscode.TreeDataProvider<TreeItem>, vscod
 
 	getChildren(element?: TreeItem): ProviderResult<TreeItem[]> {
 		if (!element) {
+			if (this.isMultiRoot && this.workspaceFolderNodes.length > 0) {
+				return Promise.resolve(this.workspaceFolderNodes);
+			}
 			this.addNodes(...this.items);
 			return Promise.resolve(this.items);
+		} else if (element instanceof WorkspaceFolderNode) {
+			this.addNodes(...element.children);
+			return Promise.resolve(element.children);
 		} else if (element instanceof Dependency) {
 			if (element.isLoading) {
 				setTimeout(() => {
@@ -691,7 +737,7 @@ export class DepNodeProvider implements vscode.TreeDataProvider<TreeItem>, vscod
 			if (element.children.length) {
 				return Promise.resolve(element.children);
 			}
-			return this.getFileNodes(element, element.config.type == 'ftp' ? '/' : element.config.remotePath).then((fileNodes) => {
+			return this.getFileNodes(element, element.config.remotePath).then((fileNodes) => {
 				// 将子节点添加到 Dependency 的 children 属性中
 				element.children = fileNodes;
 				this.addNodes(...element.children);
@@ -954,7 +1000,7 @@ export class DepNodeProvider implements vscode.TreeDataProvider<TreeItem>, vscod
 
 		let remotePath = ''
 		if (obj instanceof Dependency) {
-			remotePath = obj.config.type == 'ftp' ? "/" : obj.config.remotePath
+			remotePath = obj.config.remotePath
 		} else {
 			remotePath = obj.contextValue == 'sync_file' ? obj.parentPath : obj.realPath
 		}
@@ -1033,7 +1079,8 @@ export class DepNodeProvider implements vscode.TreeDataProvider<TreeItem>, vscod
 	}
 
 	async downloadFile(obj: Dependency | RepositoryFileNode) {
-		let localPath = path.join(obj.config.downloadPath || this.rootPath, obj.config.type == 'ftp' ? obj.realPath : path.relative(obj.config.remotePath, obj.realPath))
+		let itemRoot = obj.config.workspaceRoot || this.rootPath
+		let localPath = path.join(obj.config.downloadPath || itemRoot, path.relative(obj.config.remotePath, obj.realPath))
 		await FileTransfer.addTask({
 			config: obj.config,
 			localPath: localPath,
@@ -1045,7 +1092,8 @@ export class DepNodeProvider implements vscode.TreeDataProvider<TreeItem>, vscod
 	}
 
 	async compareFile(obj: RepositoryFileNode) {
-		let localPath = path.join(obj.config.downloadPath || this.rootPath, obj.config.type == 'ftp' ? obj.realPath : path.relative(obj.config.remotePath, obj.realPath))
+		let itemRoot = obj.config.workspaceRoot || this.rootPath
+		let localPath = path.join(obj.config.downloadPath || itemRoot, path.relative(obj.config.remotePath, obj.realPath))
 		if (!fs.existsSync(localPath)) {
 			return vscode.window.showErrorMessage(`${l10n.t('Local file {0} does not exist', [localPath])}`);
 		}
@@ -1161,14 +1209,13 @@ export class DepNodeProvider implements vscode.TreeDataProvider<TreeItem>, vscod
 	}
 
 	refreshCount() {
-		// 获取 workspaceState 对象
 		const workspaceState = this.context.workspaceState;
 		if (Array.isArray(this.items)) {
 			let arr = Array.from(this.items)
 			let num = 0
 			arr.map((v, index) => {
-				let cache_key = v.label + '###' + this.rootPath
-				// 从 workspaceState 中读取数据
+				let itemRoot = v.config.workspaceRoot || this.rootPath
+				let cache_key = v.label + '###' + itemRoot
 				let newGlobalData = workspaceState.get(cache_key)
 				let count = 0
 				if (typeof newGlobalData === "object" && newGlobalData !== null) {
@@ -1180,21 +1227,18 @@ export class DepNodeProvider implements vscode.TreeDataProvider<TreeItem>, vscod
 				v.tooltip = tooltip;
 			})
 
-			// 刷新树视图数据
 			this._onDidChangeTreeData.fire();
 			this.items = arr
 			this.count = num
 		}
 	}
 
-	// 清除缓存
 	async clearCache(item: Dependency) {
 		console.log('清除缓存');
-		// 获取 workspaceState 对象
 		const workspaceState = this.context.workspaceState;
-		let cache_key = item.label + '###' + this.rootPath
+		let itemRoot = item.config.workspaceRoot || this.rootPath
+		let cache_key = item.label + '###' + itemRoot
 		await workspaceState.update(cache_key, "")
-		// 刷新视图显示
 		myEvent.fire("update")
 	}
 

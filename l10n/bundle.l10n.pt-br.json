@@ -22,8 +22,8 @@
   "Is this the default configuration": "Esta é a configuração padrão?",
   "Used for right-click upload and remote file comparison": "Usado para upload com clique direito e comparação de arquivos remotos",
   "Please select configuration (checked is true, unchecked is false)": "Por favor, selecione a configuração (marcado é true, não marcado é false)",
-  "sync_config.jsonc configuration file format error!": "Erro de formato do arquivo de configuração sync_config.jsonc!",
-  "Configuration file created: sync_config.jsonc": "Arquivo de configuração criado: sync_config.jsonc",
+  "{0} configuration file format error!": "Erro de formato do arquivo de configuração {0}!",
+  "Configuration file created: {0}": "Arquivo de configuração criado: {0}",
   "Please enter git commit message": "Por favor, insira a mensagem de commit do git",
   "Git commit failed, please commit manually": "Falha no commit do git, por favor, faça o commit manualmente",
   "No git commit information was entered": "Nenhuma informação de commit do git foi inserida!",
@@ -85,5 +85,13 @@
   "theEncryptedDataCannotBeEmpty": "Os dados criptografados não podem estar vazios!",
   "theSecretKeyFileDoesNotExist": "O arquivo secretKey não existe, por favor verifique!",
   "thePluginHasExpiredPleaseDownloadTheLatestVersion": "O plugin expirou, por favor baixe a versão mais recente!",
-  "noFilesThatNeedToBeCompressed": "Nenhum arquivo que precise ser compactado foi detectado. Por favor, verifique se a configuração de upload está correta!"
+  "noFilesThatNeedToBeCompressed": "Nenhum arquivo que precise ser compactado foi detectado. Por favor, verifique se a configuração de upload está correta!",
+  "Migrate": "Migrar",
+  "Keep in project root": "Manter na raiz do projeto",
+  "Detected config file in project root. Migrate to the configured external directory?": "Arquivo de configuração detectado na raiz do projeto. Migrar para o diretório externo configurado?",
+  "Config file migrated to: {0}": "Arquivo de configuração migrado para: {0}",
+  "Select config store directory": "Selecionar diretório de armazenamento de configuração",
+  "Config store path is already using project root": "O caminho de armazenamento já está usando a raiz do projeto",
+  "Keep in external directory": "Manter no diretório externo",
+  "Migrate config file back to project root?": "Migrar o arquivo de configuração de volta para a raiz do projeto?"
 }

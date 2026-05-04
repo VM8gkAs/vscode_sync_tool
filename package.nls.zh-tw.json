@@ -23,8 +23,10 @@
   "SyncTools.encrypt": "加密",
   "SyncTools.decrypt": "解密",
   "SyncTools.generateSecretKey": "生成祕鑰",
-  "SyncTools.changeSecretKey": "修改祕鑰",
-  "SyncTools.secretKey.description": "用於加密配置中的使用者名稱和密碼，防止帳戶洩露  \r\n\n ***請注意：*** 修改祕鑰前，請解密其他專案配置檔案中已加密的資料，否則會導致其他專案解密失敗！\r\n\n [點擊此處生成隨機祕鑰](command:sync_tools.generateSecretKey)",
+    "SyncTools.changeSecretKey": "修改祕鑰",
+    "SyncTools.selectConfigStorePath": "選擇配置檔案儲存目錄",
+    "SyncTools.resetConfigStorePath": "重置配置檔案儲存路徑（使用專案根目錄）",
+    "SyncTools.secretKey.description": "用於加密配置中的使用者名稱和密碼，防止帳戶洩露  \r\n\n ***請注意：*** 修改祕鑰前，請解密其他專案配置檔案中已加密的資料，否則會導致其他專案解密失敗！\r\n\n [點擊此處生成隨機祕鑰](command:sync_tools.generateSecretKey)",
   "SyncTools.add_config": "添加配置",
   "SyncTools.clearCache": "清除當前watch快取",
   "SyncTools.clearAllCache": "清除所有watch快取",
@@ -37,5 +39,6 @@
   "SyncTools.openFileSizeLimit": "打開檔案大小詢問，預設為5 Mb",
   "SyncTools.uploadTaskNumber": "當上傳數量大於多少時使用並發上傳，預設為10",
   "SyncTools.uploadConcurrentLimit": "上傳並發量配置：並發量最小為1，最大為100，預設為3",
-  "SyncTools.proxyConfig.description": "[配置文件](https://www.npmjs.com/package/socks) \n\n 配置參考：\n\n ```js \n{\n   \"proxyHost\": \"127.0.0.1\", // ipv4、ipv6 或主機名 \n   \"proxyPort\": 7890, \n   \"proxyUsername\": \"\", // 用於 SOCKS4 userId 身份驗證，以及與密碼結合的 SOCKS5 user/pass 身份驗證。\n   \"proxyPassword\": \"\", // 與 userId 結合使用，用於 SOCKS5 代理的使用者/密碼身份驗證。\n   \"proxyType\": 5 // 代理版本（4 或 5）。對於 v4a 使用 4，對於 v5h 使用 5。\n}\n ```"
+  "SyncTools.proxyConfig.description": "[配置文件](https://www.npmjs.com/package/socks) \n\n 配置參考：\n\n ```js \n{\n   \"proxyHost\": \"127.0.0.1\", // ipv4、ipv6 或主機名 \n   \"proxyPort\": 7890, \n   \"proxyUsername\": \"\", // 用於 SOCKS4 userId 身份驗證，以及與密碼結合的 SOCKS5 user/pass 身份驗證。\n   \"proxyPassword\": \"\", // 與 userId 結合使用，用於 SOCKS5 代理的使用者/密碼身份驗證。\n   \"proxyType\": 5 // 代理版本（4 或 5）。對於 v4a 使用 4，對於 v5h 使用 5。\n}\n ```",
+    "SyncTools.configStorePath.description": "配置檔案的外部儲存目錄路徑。請使用命令 **Sync Tools: 選擇配置檔案儲存目錄** (`sync_tools.selectConfigStorePath`) 透過檔案選擇器選擇目錄。設定後，`sync_config.jsonc` 檔案將儲存在 `<此路徑>/<專案名稱>-<雜湊>/sync_config.jsonc`，而非專案根目錄。這可以防止敏感憑證被意外提交到版本控制系統。留空則使用專案根目錄（預設行為）。"
 }

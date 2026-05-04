@@ -1,5 +1,5 @@
-const childProcess = require("child_process")
-const isDirectory = require("is-directory")
+import { exec } from "child_process"
+import isDirectory from "is-directory"
 import fs from "fs-extra"
 import path from "path"
 import dayjs from "dayjs"
@@ -16,8 +16,20 @@ import { getContext } from "./config/globals"
 import { ClientConnectionError, NoWatchFilesError } from "./types/connect"
 import { addLogTask } from "./output"
 import { StatusBarUi } from "./statusBar"
+import { ZIP_NO_UPLOAD_CLEAR_MS } from "./config/config"
 
 const { log, error } = oConsole
+
+/** 工作区相对路径转为远程 posix 片段 */
+function workspaceToRemoteRelative(rootPath: string, absPath: string): string {
+	return path.relative(rootPath, absPath).split(path.sep).join("/");
+}
+
+/** 部署用远程路径拼接 */
+function joinDeployRemote(remoteRoot: string, relPosix: string): string {
+	const base = remoteRoot.replace(/\/+$/, "") || "/";
+	return path.posix.join(base, relPosix);
+}
 
 export class Deploy {
 	label: string
@@ -45,7 +57,7 @@ export class Deploy {
 		this.label = dependency.config.name
 		this.config = dependency.config;
 		this.context = getContext();
-		this.rootPath = getRootPath()
+		this.rootPath = dependency.config.workspaceRoot || getRootPath()
 		this.zipPath = ""
 		this.useZip = false
 		this.all_upload = false
@@ -213,7 +225,7 @@ export class Deploy {
 			return Promise.resolve()
 		}
 		return new Promise<void>((resolve, reject) => {
-			childProcess.exec(
+			exec(
 				`${build}`,
 				{ cwd: this.rootPath, maxBuffer: 1024 * 1024 * 1024 },
 				(e: { message: any } | null) => {
@@ -321,7 +333,7 @@ export class Deploy {
 			this.useZip = true;
 			setTimeout(() => {
 				FileTransfer.noUploadFiles.delete(zipPath);
-			}, 2000);
+			}, ZIP_NO_UPLOAD_CLEAR_MS);
 
 		} catch (e) {
 			error(e?.toString());
@@ -348,7 +360,7 @@ export class Deploy {
 		const { config } = this
 		let { deleteRemote, remotePath, distPath, type } = config
 		if (deleteRemote) {
-			let remoteFilePath = type == 'ftp' ? "" : remotePath
+			let remoteFilePath = remotePath || "/"
 			log(`4. 删除远程文件 ${remoteFilePath}`)
 
 			let arr: string[] = []
@@ -356,10 +368,12 @@ export class Deploy {
 				distPath = distPath?.split(",")
 			}
 			distPath?.map((v: string) => {
-				if (!path.isAbsolute(v)) {
-					v = path.join(remoteFilePath, v)
+				let p = v.replace(/\\/g, "/");
+				if (!path.posix.isAbsolute(p)) {
+					const base = remoteFilePath.replace(/\\/g, "/").replace(/\/+$/, "");
+					p = base ? path.posix.join(base, p) : path.posix.join("/", p);
 				}
-				arr.push(v)
+				arr.push(p)
 			})
 
 			if (arr.length == 0 || (arr.length == 1 && config.upload_to_root)) {
@@ -388,7 +402,7 @@ export class Deploy {
 		// 是否压缩上传
 		if (this.config.compress && this.useZip) {
 			console.log("上传压缩文件");
-			let remotePath = path.join(this.config.type !== "ftp" ? this.config.remotePath : "", this.zipPath)
+			let remotePath = joinDeployRemote(this.config.remotePath, this.zipPath)
 			const localPath = path.join(this.rootPath, this.zipPath)
 
 			if (fs.existsSync(localPath)) {
@@ -428,11 +442,7 @@ export class Deploy {
 			this.config.distPath = this.config.distPath?.split(",")
 		}
 		let len = this.config.distPath?.length || 0
-
-		let remotePath = path.join(
-			this.config.type !== "ftp" ? this.config.remotePath : "",
-			path.relative(this.rootPath, v.file)
-		)
+		let remotePath = joinDeployRemote(this.config.remotePath, workspaceToRemoteRelative(this.rootPath, v.file))
 
 		// 只有一个目录则上传该目录下文件，不包含目录
 		let up_to_root = false
@@ -440,10 +450,7 @@ export class Deploy {
 			up_to_root = true
 
 			let new_path = path.join(this.rootPath, this.config.distPath[0])
-			remotePath = path.join(
-				this.config.type !== "ftp" ? this.config.remotePath : "",
-				path.relative(new_path, v.file)
-			)
+			remotePath = joinDeployRemote(this.config.remotePath, workspaceToRemoteRelative(new_path, v.file))
 		}
 
 		// 判断是文件还是文件夹
@@ -455,13 +462,8 @@ export class Deploy {
 			if (files && files.length) {
 				for (const vv of files) {
 					if (up_to_root) {
-						remotePath = path.join(
-							this.config.type !== "ftp" ? this.config.remotePath : "",
-							path.relative(this.config.type !== "ftp" ? this.rootPath : "", vv)
-						)
+						remotePath = joinDeployRemote(this.config.remotePath, workspaceToRemoteRelative(this.rootPath, vv))
 					}
-
-					remotePath = this.config.type == "ftp" ? path.posix.join("/", remotePath) : remotePath
 					await FileTransfer.addTask({
 						config: this.config,
 						localPath: vv,
@@ -471,7 +473,6 @@ export class Deploy {
 				}
 			}
 		} else {
-			remotePath = this.config.type == "ftp" ? path.posix.join("/", remotePath) : remotePath
 			await FileTransfer.addTask({
 				config: this.config,
 				localPath: v.file,
@@ -486,14 +487,8 @@ export class Deploy {
 			return
 		}
 
-		let remotePath = path.join(
-			this.config.type !== "ftp" ? this.config.remotePath : "",
-			path.relative(this.rootPath, v.opType.newname)
-		)
-		let localPath = path.join(
-			this.config.type !== "ftp" ? this.config.remotePath : "",
-			path.relative(this.rootPath, v.file)
-		)
+		let remotePath = joinDeployRemote(this.config.remotePath, workspaceToRemoteRelative(this.rootPath, v.opType.newname))
+		let localPath = joinDeployRemote(this.config.remotePath, workspaceToRemoteRelative(this.rootPath, v.file))
 
 		// 重命名文件
 		await FileTransfer.addTask({
@@ -505,10 +500,7 @@ export class Deploy {
 	}
 
 	async deleteFile(v: FileOpType) {
-		let remotePath: string = path.join(
-			this.config.type !== "ftp" ? this.config.remotePath : "",
-			path.relative(this.rootPath, v.file)
-		)
+		let remotePath: string = joinDeployRemote(this.config.remotePath, workspaceToRemoteRelative(this.rootPath, v.file))
 
 		await FileTransfer.addTask({
 			config: this.config,

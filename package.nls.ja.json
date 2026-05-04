@@ -24,6 +24,8 @@
   "SyncTools.decrypt": "復号化",
   "SyncTools.generateSecretKey": "秘密鍵を生成",
   "SyncTools.changeSecretKey": "秘密鍵を変更",
+  "SyncTools.selectConfigStorePath": "設定ファイル保存ディレクトリを選択",
+  "SyncTools.resetConfigStorePath": "設定ファイル保存パスをリセット（プロジェクトルートを使用）",
   "SyncTools.secretKey.description": "設定内のユーザー名とパスワードを暗号化し、アカウント情報の漏洩を防ぎます。  \r\n\n ***注意:*** 秘密鍵を変更する前に、他のプロジェクトの設定ファイルに暗号化されているデータを復号化してください。そうしないと、他のプロジェクトの復号化が失敗する可能性があります！ \r\n\n [ここをクリックしてランダムな秘密鍵を生成](command:sync_tools.generateSecretKey)",
   "SyncTools.add_config": "設定を追加",
   "SyncTools.clearCache": "現在のウォッチキャッシュをクリア",
@@ -37,5 +39,6 @@
   "SyncTools.openFileSizeLimit": "ファイルを開く際のサイズの確認、デフォルトは5 Mb",
   "SyncTools.uploadTaskNumber": "アップロード数がいくつ以上の場合に並列アップロードを使用するか、デフォルトは10",
   "SyncTools.uploadConcurrentLimit": "アップロードの並列制限設定：並列数の最小値は1、最大値は100、デフォルトは3",
-  "SyncTools.proxyConfig.description": "[設定ドキュメント](https://www.npmjs.com/package/socks) \n\n 設定例： \n\n ```js \n{\n   \"proxyHost\": \"127.0.0.1\", // ipv4、ipv6またはホスト名 \n   \"proxyPort\": 7890, \n   \"proxyUsername\": \"\", // SOCKS4のuserId認証、およびSOCKS5のuser/pass認証でパスワードと組み合わせて使用されます。 \n   \"proxyPassword\": \"\", // SOCKS5プロキシのユーザー/パスワード認証でuserIdと組み合わせて使用されます。 \n   \"proxyType\": 5 // プロキシのバージョン（4または5）。v4aの場合は4、v5hの場合は5を使用します。 \n}\n ```"
+  "SyncTools.proxyConfig.description": "[設定ドキュメント](https://www.npmjs.com/package/socks) \n\n 設定例： \n\n ```js \n{\n   \"proxyHost\": \"127.0.0.1\", // ipv4、ipv6またはホスト名 \n   \"proxyPort\": 7890, \n   \"proxyUsername\": \"\", // SOCKS4のuserId認証、およびSOCKS5のuser/pass認証でパスワードと組み合わせて使用されます。 \n   \"proxyPassword\": \"\", // SOCKS5プロキシのユーザー/パスワード認証でuserIdと組み合わせて使用されます。 \n   \"proxyType\": 5 // プロキシのバージョン（4または5）。v4aの場合は4、v5hの場合は5を使用します。 \n}\n ```",
+  "SyncTools.configStorePath.description": "設定ファイルを保存する外部ディレクトリのパスです。**Sync Tools: 設定ファイル保存ディレクトリを選択** (`sync_tools.selectConfigStorePath`) コマンドでファイル選択ダイアログからディレクトリを選択できます。設定すると、`sync_config.jsonc` ファイルはプロジェクトルートではなく `<このパス>/<プロジェクト名>-<ハッシュ>/sync_config.jsonc` に保存されます。機密情報がバージョン管理に誤ってコミットされるのを防ぎます。空のままにするとプロジェクトルートを使用します（既定の動作）。"
 }

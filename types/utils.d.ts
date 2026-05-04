@@ -1,6 +1,8 @@
 import * as vscode from "vscode";
 import { DeployConfigItem, FileTransferConfigItem, Permissions } from "./types/config";
 export declare function sleep(ms?: number): Promise<unknown>;
+/** 深拷贝配置/任务对象（优先 structuredClone） */
+export declare function deepClone<T>(obj: T): T;
 export declare const oConsole: {
     log: (...message: any[]) => void;
     succeed: (...message: any[]) => void;
@@ -8,9 +10,24 @@ export declare const oConsole: {
     error: (...message: any[]) => void;
 };
 export declare const getPluginSetting: () => vscode.WorkspaceConfiguration;
+/**
+ * 根据项目根路径生成唯一目录名：basename-shortHash
+ * 用于在外部存储目录下区分同名项目
+ */
+export declare function getProjectDirName(rootPath: string): string;
+/**
+ * 获取当前项目的配置文件完整路径
+ * - 若用户未设置 configStorePath，则使用项目根目录
+ * - 若设置了 configStorePath，则放在 configStorePath/projectDirName/ 下
+ */
+export declare function getConfigFilePath(rootPath?: string): string;
+/**
+ * 确保配置文件所在目录存在
+ */
+export declare function ensureConfigDir(configFilePath: string): void;
 export declare const showInformationMessage: (msg: string, confirmText?: string, cancelText?: string) => Promise<unknown>;
 /**
- * 获取根路径
+ * 获取根路径；多工作区时若传入 file 则匹配包含该文件的工作区根目录
  */
 export declare function getRootPath(file?: string): string;
 /**
@@ -38,7 +55,7 @@ export declare const isIgnore: (ignore_arr: string[] | undefined, file: string, 
 export declare const getIgnoreConfig: (config: FileTransferConfigItem, file?: string, view?: boolean) => any[] | Promise<string[]>;
 export declare const toArray: (obj: {
     [x: string]: any;
-}) => FileTransferConfigItem[];
+}, rootPath?: string) => FileTransferConfigItem[];
 /**
  * 添加配置
  * @param context  上下文
@@ -54,7 +71,9 @@ export declare function addConfig(rootPath: string): Promise<void>;
  * @param showErr 显示异常 1需要 2不需要
  * @returns
  */
-export declare function getUserConfig(type?: number, showErr?: number): Promise<any>;
+export declare function getUserConfig(type?: number, showErr?: number, explicitRootPath?: string): Promise<any>;
+/** 清除指定 rootPath（或全部工作区）的配置缓存 */
+export declare function clearConfigCache(rootPath?: string): void;
 export declare const checkSubmitGit: (workspaceRoot: string, config: DeployConfigItem) => Promise<unknown>;
 export declare function inputMsg(option: vscode.InputBoxOptions, isGit?: boolean): Promise<string>;
 export declare const getFileSizeFsExtra: (filePath: string) => Promise<number | null>;
@@ -98,5 +117,6 @@ export declare function sortFiles(filesArr: any[], isNested?: boolean): any[];
 export declare function isValidLinuxPermission(permissions: string | number): boolean;
 export declare function permissionsToOctal(permissions: Permissions): string;
 export declare const getNormalPath: (remotePath: string) => string;
+/** 生成随机密钥字符串（密码学安全） */
 export declare function generateRandomPassword(length: number): string;
 //# sourceMappingURL=utils.d.ts.map

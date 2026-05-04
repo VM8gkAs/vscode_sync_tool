@@ -142,6 +142,6 @@ sync_config.jsonc 配置参考
 
 ## 问题反馈
 
-此项目为业余时间开发，有问题可以在此处反馈，但不一会会修复
+此项目为业余时间开发，有问题可以在此处反馈，但不一会修复
 
 [提交问题](https://github.com/oorzc/vscode_sync_tool/issues)

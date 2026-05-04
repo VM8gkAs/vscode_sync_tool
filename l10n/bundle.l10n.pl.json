@@ -22,8 +22,8 @@
   "Is this the default configuration": "Czy to jest konfiguracja domyślna?",
   "Used for right-click upload and remote file comparison": "Używane do przesyłania poprzez kliknięcie prawym przyciskiem myszy i porównywania zdalnych plików",
   "Please select configuration (checked is true, unchecked is false)": "Wybierz konfigurację (zaznaczone - true, niezaznaczone - false)",
-  "sync_config.jsonc configuration file format error!": "Błąd formatu pliku konfiguracyjnego sync_config.jsonc!",
-  "Configuration file created: sync_config.jsonc": "Utworzono plik konfiguracyjny: sync_config.jsonc",
+  "{0} configuration file format error!": "Błąd formatu pliku konfiguracyjnego {0}!",
+  "Configuration file created: {0}": "Utworzono plik konfiguracyjny: {0}",
   "Please enter git commit message": "Wprowadź komunikat commitu Git",
   "Git commit failed, please commit manually": "Kommitowanie Git nie powiodło się, wykonaj commit ręcznie",
   "No git commit information was entered": "Nie wprowadzono informacji o commicie Git!",
@@ -85,5 +85,13 @@
   "theEncryptedDataCannotBeEmpty": "Zaszyfrowane dane nie mogą być puste!",
   "theSecretKeyFileDoesNotExist": "Plik secretKey nie istnieje, proszę sprawdzić!",
   "thePluginHasExpiredPleaseDownloadTheLatestVersion": "Wtyczka wygasła, pobierz najnowszą wersję!",
-  "noFilesThatNeedToBeCompressed": "Nie wykryto plików wymagających kompresji. Sprawdź, czy konfiguracja przesyłania jest poprawna!"
+  "noFilesThatNeedToBeCompressed": "Nie wykryto plików wymagających kompresji. Sprawdź, czy konfiguracja przesyłania jest poprawna!",
+  "Migrate": "Migruj",
+  "Keep in project root": "Pozostaw w katalogu głównym projektu",
+  "Detected config file in project root. Migrate to the configured external directory?": "Wykryto plik konfiguracyjny w katalogu głównym projektu. Czy przenieść do skonfigurowanego katalogu zewnętrznego?",
+  "Config file migrated to: {0}": "Plik konfiguracyjny przeniesiony do: {0}",
+  "Select config store directory": "Wybierz katalog przechowywania konfiguracji",
+  "Config store path is already using project root": "Ścieżka przechowywania konfiguracji już wskazuje katalog główny projektu",
+  "Keep in external directory": "Zostaw w katalogu zewnętrznym",
+  "Migrate config file back to project root?": "Przenieść plik konfiguracji z powrotem do katalogu głównego projektu?"
 }

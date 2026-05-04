@@ -34,6 +34,7 @@ export interface DeployConfigItem {
     username: string; // 用户名 SFTP
     password?: string; // 密码
     privateKeyPath?: string; // 秘钥地址
+    secretKeyPath?: string; // 加密用户名/密码的密钥文件路径（CodeLens 加密功能）
     proxy?: boolean; // 是否使用代理
     sock?: any;
     watch?: boolean; // 监听上传目录文件变动，如果是前端项目不建议启用，默认true
@@ -56,6 +57,7 @@ export interface DeployConfigItem {
 
 export interface FileTransferConfigItem extends DeployConfigItem {
     name: string; // 配置名称
+    workspaceRoot?: string; // 所属工作区根路径（多工作区支持）
     start?: string; // 开始时间
     end?: string; // 结束时间
     useTime?: string; // 耗时

@@ -24,6 +24,8 @@
   "SyncTools.decrypt": "解密",
   "SyncTools.generateSecretKey": "生成秘钥",
   "SyncTools.changeSecretKey": "修改秘钥",
+  "SyncTools.selectConfigStorePath": "选择配置文件存储目录",
+  "SyncTools.resetConfigStorePath": "重置配置文件存储路径（使用项目根目录）",
   "SyncTools.secretKey.description": "用于加密配置中的用户名和密码，防止账户泄露  \r\n\n ***请注意：*** 修改秘钥前，请解密其他项目配置文件中已加密的数据，否则会导致其他项目解密失败！\r\n\n [点击此处生成随机秘钥](command:sync_tools.generateSecretKey)",
   "SyncTools.add_config": "添加配置",
   "SyncTools.clearCache": "清除当前watch缓存",
@@ -37,5 +39,6 @@
   "SyncTools.openFileSizeLimit": "打开文件大小询问，默认为5 Mb",
   "SyncTools.uploadTaskNumber": "当上传数量大于多少时使用并发上传，默认为10",
   "SyncTools.uploadConcurrentLimit": "上传并发量配置：并发量最小为1，最大为100，默认为3",
-  "SyncTools.proxyConfig.description": "[配置文档](https://www.npmjs.com/package/socks) \n\n 配置参考：\n\n ```js \n{\n   \"proxyHost\": \"127.0.0.1\", // ipv4、ipv6 或主机名 \n   \"proxyPort\": 7890, \n   \"proxyUsername\": \"\", // 用于 SOCKS4 userId 身份验证，以及与密码结合的 SOCKS5 user/pass 身份验证。\n   \"proxyPassword\": \"\", // 与 userId 结合使用，用于 SOCKS5 代理的用户/密码身份验证。\n   \"proxyType\": 5 // 代理版本（4 或 5）。对于 v4a 使用 4，对于 v5h 使用 5。\n}\n ```"
+  "SyncTools.proxyConfig.description": "[配置文档](https://www.npmjs.com/package/socks) \n\n 配置参考：\n\n ```js \n{\n   \"proxyHost\": \"127.0.0.1\", // ipv4、ipv6 或主机名 \n   \"proxyPort\": 7890, \n   \"proxyUsername\": \"\", // 用于 SOCKS4 userId 身份验证，以及与密码结合的 SOCKS5 user/pass 身份验证。\n   \"proxyPassword\": \"\", // 与 userId 结合使用，用于 SOCKS5 代理的用户/密码身份验证。\n   \"proxyType\": 5 // 代理版本（4 或 5）。对于 v4a 使用 4，对于 v5h 使用 5。\n}\n ```",
+  "SyncTools.configStorePath.description": "配置文件的外部存储目录路径。请使用命令 **Sync Tools: 选择配置文件存储目录** (`sync_tools.selectConfigStorePath`) 通过文件选择器选择目录。设置后，`sync_config.jsonc` 文件将存储在 `<此路径>/<项目名称>-<哈希>/sync_config.jsonc`，而非项目根目录。这可以防止敏感凭据被意外提交到版本控制系统。留空则使用项目根目录（默认行为）。"
 }

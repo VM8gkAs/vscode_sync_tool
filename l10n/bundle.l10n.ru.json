@@ -22,8 +22,8 @@
   "Is this the default configuration": "Это настройка по умолчанию?",
   "Used for right-click upload and remote file comparison": "Используется для загрузки при правом клике и сравнения удаленных файлов",
   "Please select configuration (checked is true, unchecked is false)": "Пожалуйста, выберите настройку (галочка означает true, отсутствие галочки - false)",
-  "sync_config.jsonc configuration file format error!": "Ошибка формата файла конфигурации sync_config.jsonc!",
-  "Configuration file created: sync_config.jsonc": "Создан файл конфигурации: sync_config.jsonc",
+  "{0} configuration file format error!": "Ошибка формата файла конфигурации {0}!",
+  "Configuration file created: {0}": "Файл конфигурации создан: {0}",
   "Please enter git commit message": "Пожалуйста, введите сообщение коммита Git",
   "Git commit failed, please commit manually": "Коммит Git не удался, пожалуйста, сделайте коммит вручную",
   "No git commit information was entered": "Не было введено никакой информации о коммите Git!",
@@ -85,5 +85,13 @@
   "theEncryptedDataCannotBeEmpty": "Зашифрованные данные не могут быть пустыми!",
   "theSecretKeyFileDoesNotExist": " Файл secretKey не существует, пожалуйста, проверьте!",
   "thePluginHasExpiredPleaseDownloadTheLatestVersion": "Плагин устарел, пожалуйста, скачайте последнюю версию!",
-  "noFilesThatNeedToBeCompressed": "Не обнаружено файлов, требующих сжатия. Пожалуйста, проверьте, правильно ли настроена загрузка!"
+  "noFilesThatNeedToBeCompressed": "Не обнаружено файлов, требующих сжатия. Пожалуйста, проверьте, правильно ли настроена загрузка!",
+  "Migrate": "Мигрировать",
+  "Keep in project root": "Оставить в корне проекта",
+  "Detected config file in project root. Migrate to the configured external directory?": "Обнаружен файл конфигурации в корне проекта. Мигрировать в настроенный внешний каталог?",
+  "Config file migrated to: {0}": "Файл конфигурации перемещён в: {0}",
+  "Select config store directory": "Выбрать каталог хранения конфигурации",
+  "Config store path is already using project root": "Путь хранения конфигурации уже указывает на корень проекта",
+  "Keep in external directory": "Оставить во внешнем каталоге",
+  "Migrate config file back to project root?": "Перенести файл конфигурации обратно в корень проекта?"
 }

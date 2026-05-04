@@ -1,9 +1,9 @@
 {
-  "name": "ssh-tools",
+  "name": "ssh-tool",
   "displayName": "FTP/SFTP/SSH Sync Tool",
   "publisher": "oorzc",
   "description": "%SyncTools.title%",
-  "version": "0.5.0",
+  "version": "0.5.1",
   "icon": "static/logo_new.png",
   "engines": {
     "vscode": "^1.73.0"
@@ -197,6 +197,16 @@
         "title": "%SyncTools.changeSecretKey%"
       },
       {
+        "command": "sync_tools.selectConfigStorePath",
+        "title": "%SyncTools.selectConfigStorePath%",
+        "icon": "$(folder-opened)"
+      },
+      {
+        "command": "sync_tools.resetConfigStorePath",
+        "title": "%SyncTools.resetConfigStorePath%",
+        "icon": "$(discard)"
+      },
+      {
         "command": "sync_tools.encrypt",
         "title": "%SyncTools.encrypt%"
       },
@@ -232,6 +242,14 @@
         },
         {
           "command": "sync_tools.closeAllClient",
+          "when": "view == 'asyncToolsView'"
+        },
+        {
+          "command": "sync_tools.selectConfigStorePath",
+          "when": "view == 'asyncToolsView'"
+        },
+        {
+          "command": "sync_tools.resetConfigStorePath",
           "when": "view == 'asyncToolsView'"
         }
       ],
@@ -435,6 +453,12 @@
           "maximum": 100,
           "default": 3,
           "description": "%SyncTools.uploadConcurrentLimit%"
+        },
+        "SyncTools.configStorePath": {
+          "type": "string",
+          "default": "",
+          "markdownDescription": "%SyncTools.configStorePath.description%",
+          "order": 100
         }
       }
     }
@@ -488,8 +512,10 @@
     "progress-stream": "^2.0.0",
     "promise-retry": "^2.0.1",
     "socks": "^2.8.3",
-    "ssh2": "^1.14.0",
+    "ssh2": "^1.16.0",
+    "ssh2-sftp-client": "^12.0.1",
     "strip-json-comments": "^5.0.1",
     "uuid": "^11.0.3"
-  }
+  },
+  "packageManager": "pnpm@10.18.2+sha512.9fb969fa749b3ade6035e0f109f0b8a60b5d08a1a87fdf72e337da90dcc93336e2280ca4e44f2358a649b83c17959e9993e777c2080879f3801e6f0d999ad3dd"
 }

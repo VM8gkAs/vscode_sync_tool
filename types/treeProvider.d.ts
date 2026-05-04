@@ -23,6 +23,13 @@ export declare class Dependency extends TreeItem {
     constructor(config: FileTransferConfigItem, collapsibleState: vscode.TreeItemCollapsibleState, // 0 不能展开折叠，没有子项 ，1 折叠  ，2 展开
     tooltip: string, description: string, index: number);
 }
+export declare class WorkspaceFolderNode extends TreeItem {
+    folderName: string;
+    rootPath: string;
+    children: Dependency[];
+    folderPath: string;
+    constructor(folderName: string, rootPath: string, items: Dependency[]);
+}
 export declare class RepositoryFileNode extends TreeItem {
     file: RepositoryFile;
     parent: Dependency | RepositoryFileNode;
@@ -45,6 +52,8 @@ export declare class DepNodeProvider implements vscode.TreeDataProvider<TreeItem
     private rootPath;
     private allNodes;
     refreshTimer: string | number | NodeJS.Timeout | undefined;
+    private workspaceFolderNodes;
+    private isMultiRoot;
     constructor();
     handleDrop(target: Dependency | RepositoryFileNode | undefined, sources: vscode.DataTransfer, token: vscode.CancellationToken): Promise<void>;
     handleDrag(source: (Dependency | RepositoryFileNode)[], treeDataTransfer: vscode.DataTransfer, token: vscode.CancellationToken): Promise<void>;

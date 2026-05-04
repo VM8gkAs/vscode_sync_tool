@@ -24,6 +24,8 @@
   "SyncTools.decrypt": "Decifra",
   "SyncTools.generateSecretKey": "Genera chiave segreta",
   "SyncTools.changeSecretKey": "Cambia chiave segreta",
+  "SyncTools.selectConfigStorePath": "Seleziona directory di archiviazione configurazione",
+  "SyncTools.resetConfigStorePath": "Reimposta percorso di archiviazione configurazione (usa root del progetto)",
   "SyncTools.secretKey.description": "Utilizzato per cifrare il nome utente e la password nella configurazione per prevenire la divulgazione del conto.  \r\n\n ***Attenzione:*** Prima di cambiare la chiave segreta, decifrare i dati cifrati nei file di configurazione di altri progetti, altrimenti il decifratura degli altri progetti fallirà!\r\n\n [Clicca qui per generare una chiave segreta casuale](command:sync_tools.generateSecretKey)",
   "SyncTools.add_config": "Aggiungi configurazione",
   "SyncTools.clearCache": "Cancella la cache watch attuale",
@@ -37,5 +39,6 @@
   "SyncTools.openFileSizeLimit": "Richiesta per l'apertura di file in base alla dimensione. Di default è 5 MB.",
   "SyncTools.uploadTaskNumber": "Utilizzare il caricamento concorrente quando il numero di caricamenti è maggiore di quanto? Di default è 10.",
   "SyncTools.uploadConcurrentLimit": "Configurazione del numero di caricamenti simultanei: il numero minimo di connessioni simultanee è 1, il massimo è 100. Di default è 3.",
-  "SyncTools.proxyConfig.description": "[Documentazione di configurazione](https://www.npmjs.com/package/socks) \n\n Esempio di configurazione:\n\n ```js \n{\n   \"proxyHost\": \"127.0.0.1\", // ipv4, ipv6 o nome host \n   \"proxyPort\": 7890, \n   \"proxyUsername\": \"\", // Utilizzato per l'autenticazione userId di SOCKS4 e l'autenticazione user/pass di SOCKS5 in combinazione con la password. \n   \"proxyPassword\": \"\", // Utilizzato in combinazione con userId per l'autenticazione user/pass del proxy SOCKS5. \n   \"proxyType\": 5 // Versione del proxy (4 o 5). Utilizzare 4 per v4a e 5 per v5h. \n}\n ```"
+  "SyncTools.proxyConfig.description": "[Documentazione di configurazione](https://www.npmjs.com/package/socks) \n\n Esempio di configurazione:\n\n ```js \n{\n   \"proxyHost\": \"127.0.0.1\", // ipv4, ipv6 o nome host \n   \"proxyPort\": 7890, \n   \"proxyUsername\": \"\", // Utilizzato per l'autenticazione userId di SOCKS4 e l'autenticazione user/pass di SOCKS5 in combinazione con la password. \n   \"proxyPassword\": \"\", // Utilizzato in combinazione con userId per l'autenticazione user/pass del proxy SOCKS5. \n   \"proxyType\": 5 // Versione del proxy (4 o 5). Utilizzare 4 per v4a e 5 per v5h. \n}\n ```",
+  "SyncTools.configStorePath.description": "Percorso della directory esterna per l'archiviazione dei file di configurazione. Usa il comando **Sync Tools: Seleziona directory di archiviazione configurazione** (`sync_tools.selectConfigStorePath`) per scegliere una directory tramite il selettore file. Se impostato, il file `sync_config.jsonc` verrà archiviato in `<questo percorso>/<nome progetto>-<hash>/sync_config.jsonc` anziché nella root del progetto. Questo impedisce che le credenziali sensibili vengano accidentalmente inserite nel controllo versione. Lasciare vuoto per usare la root del progetto (comportamento predefinito)."
 }

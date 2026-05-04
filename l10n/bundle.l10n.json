@@ -22,8 +22,8 @@
   "Is this the default configuration": "Is this the default configuration",
   "Used for right-click upload and remote file comparison": "Used for right-click upload and remote file comparison",
   "Please select configuration (checked is true, unchecked is false)": "Please select configuration (checked is true, unchecked is false)",
-  "sync_config.jsonc configuration file format error!": "sync_config.jsonc configuration file format error!",
-  "Configuration file created: sync_config.jsonc": "Configuration file created: sync_config.jsonc",
+  "{0} configuration file format error!": "{0} configuration file format error!",
+  "Configuration file created: {0}": "Configuration file created: {0}",
   "Please enter git commit message": "Please enter git commit message",
   "Git commit failed, please commit manually": "Git commit failed, please commit manually",
   "No git commit information was entered": "No git commit information was entered",
@@ -85,5 +85,13 @@
   "theEncryptedDataCannotBeEmpty": "The encrypted data cannot be empty!",
   "theSecretKeyFileDoesNotExist": "The secretKey file does not exist, please check!",
   "thePluginHasExpiredPleaseDownloadTheLatestVersion": "The plugin has expired, please download the latest version!",
-  "noFilesThatNeedToBeCompressed": "No files requiring compression were detected. Please check if the upload configuration is correct!"
+  "noFilesThatNeedToBeCompressed": "No files requiring compression were detected. Please check if the upload configuration is correct!",
+  "Migrate": "Migrate",
+  "Keep in project root": "Keep in project root",
+  "Detected config file in project root. Migrate to the configured external directory?": "Detected config file in project root. Migrate to the configured external directory?",
+  "Config file migrated to: {0}": "Config file migrated to: {0}",
+  "Select config store directory": "Select config store directory",
+  "Config store path is already using project root": "Config store path is already using project root",
+  "Keep in external directory": "Keep in external directory",
+  "Migrate config file back to project root?": "Migrate config file back to project root?"
 }

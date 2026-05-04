@@ -4,6 +4,7 @@ import * as fs from "fs-extra"
 import * as vscode from "vscode"
 import { parseTree, Node, getNodeValue, applyEdits, modify, format } from "jsonc-parser"
 import { getPluginSetting, getRootPath, generateRandomPassword } from "./utils"
+import { CONFIG_FILENAME } from "./config/config"
 import { l10n } from "vscode"
 var CryptoJS = require("crypto-js")
 
@@ -13,7 +14,7 @@ class JsonCodeLensProvider implements vscode.CodeLensProvider {
     const codeLenses: vscode.CodeLens[] = []
 
     let file = document.uri.fsPath || ""
-    if (path.basename(file) !== "sync_config.jsonc") {
+    if (path.basename(file) !== CONFIG_FILENAME) {
       return codeLenses
     }
 
@@ -51,7 +52,7 @@ class JsonCodeLensProvider implements vscode.CodeLensProvider {
         )
       })
     } catch (e) {
-      console.error("sync_config.jsonc " + l10n.t('fileFormatError'))
+      console.error(CONFIG_FILENAME + " " + l10n.t('fileFormatError'))
     } finally {
       return codeLenses
     }
