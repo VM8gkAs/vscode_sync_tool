@@ -5,6 +5,34 @@
 - [繁體中文](docs/i18n/CHANGELOG.zh-TW.md)
 - [詳細變更追蹤（繁體中文）](docs/i18n/CHANGELOG_DETAIL.zh-TW.md)
 
+## v0.6.2
+
+### Improved
+- Reduced repeated remote directory existence checks by caching verified folders and deduplicating in-flight folder checks.
+- Made watcher cache updates deterministic by replacing non-awaited async iteration with awaited per-config processing.
+- Serialized watcher cache read/merge/write operations per config and workspace to prevent lost updates during rapid file events.
+- Cached compiled ignore matchers and reused them during recursive local file traversal.
+- Rate-limited dynamic upload concurrency probing and reused in-flight probes per config.
+- Cached successful FTP modification-time command strategies per server/config, with fallback discovery when a cached strategy fails.
+- Updated production dependencies and locked vulnerable transitive packages; the production dependency audit now reports zero vulnerabilities.
+
+### Fixed
+- Included the declared Log language configuration and grammar in packaged VSIX files.
+- Fixed negated ignore rules resolving outside or against the wrong path on Windows, including exact-file restores.
+
+### Changed
+- `npm test` now runs a finite typecheck and unit-test flow instead of the previous watch-mode compile pretest.
+- Raised the minimum supported VS Code version from 1.73 to 1.82 and aligned extension-host typings with Node 18.15.
+- Updated TypeScript to 5.9.3, refreshed the Node 18 typings, and fixed the stricter cache-key type check.
+- Added CI Extension Host coverage for both VS Code 1.82 and the current Stable release.
+- Migrated ESLint to flat config and updated ESLint to 9.39.4 with typescript-eslint 8.61.1.
+- Updated Mocha to 11.7.6, webpack-cli to 7.0.3, and javascript-obfuscator to 5.4.3; production builds now use webpack's supported `--mode production` flag.
+
+### Added
+- Added a P0 complexity baseline test harness with Mocha, TypeScript test compilation, and VS Code API mocks.
+- Added focused baseline coverage for remote directory ensuring, watch-cache merge behavior, and ignore-rule traversal behavior.
+- Added a real VS Code 1.82 Extension Host integration test for the declared minimum supported version.
+
 ## v0.6.1
 
 ### Fixed
@@ -19,9 +47,6 @@
 - 8 `l10n.t()` overload mismatches in `treeProvider.ts` (array args → spread args).
 - FTP empty file upload side-effect: previously wrote a space character directly into the local file, corrupting its content; now uses a temp file (`.ftp_tmp`) for upload and auto-cleans up afterward.
 
-### Added
-- `skipCompareMode` option: choose comparison criteria — `"size+mtime"` (default), `"size"`, or `"mtime"`.
-
 ### Improved
 - Renamed `skipIfSameSize` → `skipIfSame` (backward compatible — old configs auto-migrate).
 - Skip logic: when a file is skipped, only `[skipUpload]` is logged — the `[upload]` line is no longer shown.
@@ -31,13 +56,10 @@
 - Connection pool robustness: `cleanupConnectionPool` now accepts a `maxIdle` cap with try-catch protection; `releaseClient` closes excess connections instead of returning them to the pool; all `close()`/`end()` calls are wrapped in try-catch.
 - Added `.vscode/` to `.gitignore`.
 
-## v0.6.0
-
 ### Added
-- `syncFileTime` option to sync remote file modification time after upload (FTP/SFTP/SSH).
-- `skipIfSameSize` option to skip upload when remote file size and modification time are identical (default: true).
-- `uploadDelay` option to debounce uploads and start upload N seconds after the last change (default: 0).
-- Explicit validation errors for FTP password-only auth and invalid/missing key-path fallback cases.
+- `skipCompareMode` option: choose comparison criteria — `"size+mtime"` (default), `"size"`, or `"mtime"`.
+
+## v0.6.0
 
 ### Fixed
 - SFTP file time sync by calling underlying ssh2 `utimes` and `exec touch` fallback.
@@ -50,9 +72,15 @@
 - Restored `privateKeyPath` and `secretKeyPath` in default config templates and generated examples.
 - Updated config templates for all 13 supported languages.
 
-### Docs
+### Changed
 - Synced authentication priority and runtime error messages to all localized README files.
 - Synced build command instructions to all localized README files.
+
+### Added
+- `syncFileTime` option to sync remote file modification time after upload (FTP/SFTP/SSH).
+- `skipIfSameSize` option to skip upload when remote file size and modification time are identical (default: true).
+- `uploadDelay` option to debounce uploads and start upload N seconds after the last change (default: 0).
+- Explicit validation errors for FTP password-only auth and invalid/missing key-path fallback cases.
 
 ## v0.4.0
 

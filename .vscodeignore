@@ -1,36 +1,49 @@
-# common
-.idea/**
-**/__pycache__/**
-*.py[cod]
+# ── OS junk ──
 .DS_Store
 Thumbs.db
 
-# workspace/dev only
+# ── IDE / editor ──
+.idea/**
 .vscode/**
 .vscode-test/**
 
-# build/source/deps
-build/**
+# ── Source / build tooling (not shipped) ──
 src/**
+tests/**
+scripts/**
+.github/**
+.nvmrc
+build/**
 node_modules/**
+tsconfig.json
+tsconfig.test.json
+pnpm-workspace.yaml
+webpack.config.js
+eslint.config.cjs
+**/*.ts
+**/*.map
 
-# package artifacts
+# ── Package artifacts ──
 *.vsix
 *-lock.yaml
 
-# metadata/docs/dev files
+# ── Generated / debug temp files ──
+.test-out/**
+compile_errors.txt
+diff_output.txt
+git_log_output.txt
+git_status_output.txt
 dist/extension.js.map
 dist/extension.js.LICENSE.txt
+
+# ── Docs & files not needed in extension ──
 .gitignore
 DOC.md
-patches
-**/vsc-extension-quickstart.md
-
-# config/source maps
-**/tsconfig.json
-**/.eslintrc.json
-**/*.map
-**/*.ts
-
-# project-specific extras
+DOCS.md
 doc.km
+patches
+**/vsc-extension-quickstart*.md
+
+# ── Python (if any stray files) ──
+**/__pycache__/**
+*.py[cod]

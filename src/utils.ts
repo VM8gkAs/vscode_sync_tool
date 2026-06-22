@@ -9,7 +9,7 @@ import { configText, getExampleText } from "./config/default"
 // jsonc处理
 import * as jsonc from "jsonc-parser"
 // 文件排除
-import { minimatch } from "minimatch"
+import { Minimatch } from "minimatch"
 import { getContext } from "./config/globals"
 import dayjs = require("dayjs")
 
@@ -42,6 +42,95 @@ export const oConsole = {
 //获取插件配置
 export const getPluginSetting = () => {
 	return vscode.workspace.getConfiguration("SyncTools")
+}
+
+type CompiledIgnoreRule = {
+	raw: string;
+	matcher: Minimatch;
+	childMatcher?: Minimatch;
+};
+
+const ignoreMatcherCache = new Map<string, CompiledIgnoreRule[]>();
+const maxIgnoreMatcherCacheSize = 100;
+
+function getIgnoreCacheKey(ignoreArr: string[]) {
+	return ignoreArr.map(rule => getNormalPath(rule)).join("\0");
+}
+
+function compileIgnoreRules(ignoreArr: string[] = []) {
+	const key = getIgnoreCacheKey(ignoreArr);
+	const cached = ignoreMatcherCache.get(key);
+	if (cached) {
+		return cached;
+	}
+
+	const rules = ignoreArr.map((rule) => {
+		const normalizedRule = getNormalPath(rule);
+		const isNegated = normalizedRule.startsWith("!");
+		const pattern = isNegated ? normalizedRule.slice(1) : normalizedRule;
+		return {
+			raw: normalizedRule,
+			matcher: new Minimatch(pattern),
+			childMatcher: isNegated ? new Minimatch(getNormalPath(path.join(pattern, "**"))) : undefined
+		};
+	});
+
+	ignoreMatcherCache.set(key, rules);
+	if (ignoreMatcherCache.size > maxIgnoreMatcherCacheSize) {
+		const oldestKey = ignoreMatcherCache.keys().next().value;
+		if (oldestKey !== undefined) {
+			ignoreMatcherCache.delete(oldestKey);
+		}
+	}
+
+	return rules;
+}
+
+function createIgnorePredicate(ignoreArr: string[] = [], rootPath: string, flag: boolean = false) {
+	const rules = compileIgnoreRules(ignoreArr);
+	return (file: string) => {
+		const normalizedPath = flag ? getNormalPath(file) : getNormalPath(path.relative(rootPath, file));
+		const matchedRules: string[] = [];
+		for (const rule of rules) {
+			if (rule.matcher.match(normalizedPath) || (rule.childMatcher && rule.childMatcher.match(normalizedPath))) {
+				matchedRules.push(rule.raw);
+			}
+		}
+
+		const longest = getLongestString(matchedRules);
+		return Boolean(longest && !longest.startsWith("!"));
+	};
+}
+
+export function getNegatedTraversalRoot(rootPath: string, rule: string): string | null {
+	const normalizedRule = getNormalPath(rule);
+	if (!normalizedRule.startsWith("!")) {
+		return null;
+	}
+
+	const pattern = normalizedRule.slice(1).replace(/^\/+/, "");
+	if (!pattern) {
+		return rootPath;
+	}
+
+	const globIndex = pattern.search(/[*?[\]{}()]/);
+	let literalPath = pattern;
+	if (globIndex !== -1) {
+		const literalPrefix = pattern.slice(0, globIndex);
+		if (literalPrefix.endsWith("/")) {
+			literalPath = literalPrefix.slice(0, -1);
+		} else {
+			const parent = path.posix.dirname(literalPrefix);
+			literalPath = parent === "." ? "" : parent;
+		}
+	}
+
+	const candidate = path.resolve(rootPath, literalPath || ".");
+	const relative = path.relative(rootPath, candidate);
+	const isInsideRoot = relative === ""
+		|| (relative !== ".." && !relative.startsWith(`..${path.sep}`) && !path.isAbsolute(relative));
+
+	return isInsideRoot ? candidate : null;
 }
 
 
@@ -112,13 +201,24 @@ export const getAllFiles = async (
 	ignore_arr: string[] = []
 ) => {
 	let results: string[] = []
-	if (fs.existsSync(dir)) {
-		let files = fs.readdirSync(dir)
+	const ignorePredicate = is_ignore ? createIgnorePredicate(ignore_arr, getRootPath(dir)) : undefined;
+	const walk = async (currentDir: string) => {
+		if (!fs.existsSync(currentDir)) {
+			return;
+		}
+		const currentStat = fs.lstatSync(currentDir);
+		if (!currentStat.isDirectory()) {
+			if (!ignorePredicate || !ignorePredicate(currentDir)) {
+				results.push(currentDir);
+			}
+			return;
+		}
+		let files = fs.readdirSync(currentDir)
 		for (let item of files) {
 			let flag = false
-			item = path.join(dir, item)
-			if (is_ignore) {
-				let res = await isIgnore(ignore_arr, item)
+			item = path.join(currentDir, item)
+			if (ignorePredicate) {
+				let res = ignorePredicate(item)
 				if (!res) {
 					flag = true
 				}
@@ -127,13 +227,14 @@ export const getAllFiles = async (
 			}
 			if (flag) {
 				if (fs.lstatSync(item).isDirectory()) {
-					results.push(...(await getAllFiles(item, is_ignore, ignore_arr)))
+					await walk(item)
 				} else {
 					results.push(item)
 				}
 			}
 		}
 	}
+	await walk(dir)
 	return results
 }
 
@@ -153,20 +254,29 @@ export const getAllowFiles = async (
 	if (!file) return false
 	let rootPath = getRootPath(file)
 	let ignore_arr = await getIgnoreConfig(config, file, view)
-	let arr = []
+	let arr: string[] = []
+	const seenFiles = new Set<string>();
+	const addFile = (target: string) => {
+		if (!seenFiles.has(target)) {
+			seenFiles.add(target);
+			arr.push(target);
+		}
+	};
 	//区分根目录和非根目录
 	if (rootPath == file) {
 		let files = await getAllFiles(file, true, ignore_arr)
-		arr.push(...files)
+		files.forEach(addFile)
 		for (const v of ignore_arr) {
 			if (v.startsWith("!")) {
-				let other_files = await getAllFiles(
-					path.join(rootPath, path.resolve(v.slice(1)))
-				)
+				const traversalRoot = getNegatedTraversalRoot(rootPath, v);
+				if (!traversalRoot) {
+					continue;
+				}
+				let other_files = await getAllFiles(traversalRoot)
 				for (const vv of other_files) {
 					let flag = await isIgnore(ignore_arr, vv)
 					if (!flag) {
-						arr.push(vv)
+						addFile(vv)
 					}
 				}
 			}
@@ -180,7 +290,7 @@ export const getAllowFiles = async (
 		for (const v of files) {
 			let flag = await isIgnore(ignore_arr, v)
 			if (!flag) {
-				arr.push(v)
+				addFile(v)
 			}
 		}
 	}
@@ -190,25 +300,7 @@ export const getAllowFiles = async (
 // 检查是否在排除范围内
 export const isIgnore = async (ignore_arr: string[] = [], file: string, flag: boolean = false) => {
 	let rootPath = getRootPath(file)
-	let new_file_path = !flag ? getNormalPath(path.relative(rootPath, file)) : getNormalPath(file)
-	let res = ignore_arr.filter((v) => {
-		v = getNormalPath(v)
-		if (v.startsWith("!")) {
-			return minimatch(new_file_path, v.slice(1)) || minimatch(new_file_path, getNormalPath(path.join(v.slice(1), "**")))
-		} else {
-			return minimatch(new_file_path, v)
-		}
-	})
-	let longest = getLongestString(res)
-	if (longest) {
-		if (longest.startsWith("!")) {
-			return false
-		} else {
-			return true
-		}
-	} else {
-		return false
-	}
+	return createIgnorePredicate(ignore_arr, rootPath, flag)(file)
 }
 
 /**
@@ -564,7 +656,7 @@ export async function getUserConfig(
 			return value
 		}
 
-		let configData = {}
+		let configData: Record<string, unknown> = {}
 		if (configText) {
 			configData = JSON.parse(stripJsonComments(configText))
 		}
@@ -626,8 +718,13 @@ export async function getUserConfig(
 					res[v].remotePath = getNormalPath(path.posix.join('/', res[v].remotePath))
 				}
 
-				const deepCopy = JSON.parse(JSON.stringify(configData));
-				res[v] = Object.assign(deepCopy, res[v]);
+				const configDefaults = Object.fromEntries(
+					Object.entries(configData).map(([key, value]) => [
+						key,
+						Array.isArray(value) ? [...value] : value
+					])
+				);
+				res[v] = Object.assign(configDefaults, res[v]);
 			})
 			await workspaceState.update("sync_config", res)
 			vscode.commands.executeCommand("setContext", "canEdit", true);

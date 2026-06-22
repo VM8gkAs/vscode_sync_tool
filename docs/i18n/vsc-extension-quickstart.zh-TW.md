@@ -67,7 +67,7 @@ npx @vscode/vsce package --no-dependencies
 ```
 
 > **注意**：`npm run package` 僅建置 bundle，不會產生 `.vsix` 檔案。
-> 型別檢查策略詳見 [typecheck-strategy.md](typecheck-strategy.md)。
+> 型別檢查策略詳見 [typecheck-strategy.md](../typecheck-strategy.md)。
 
 ## 啟動與除錯
 

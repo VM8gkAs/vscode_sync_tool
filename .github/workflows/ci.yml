@@ -1,0 +1,98 @@
+name: CI
+
+on:
+  push:
+  pull_request:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ci-${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  verify:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@v4
+
+      - name: Install pnpm
+        uses: pnpm/action-setup@v4
+        with:
+          version: 10.34.4
+          run_install: false
+
+      - name: Set up Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: pnpm
+
+      - name: Install dependencies
+        run: pnpm install --frozen-lockfile
+
+      - name: Check translation keys
+        run: pnpm run check:i18n
+
+      - name: Run tests
+        run: pnpm test
+
+      - name: Run strict typecheck
+        run: pnpm run typecheck:strict
+
+      - name: Run lint error gate
+        run: pnpm run lint -- --quiet
+
+      - name: Build production bundle
+        run: pnpm run package
+
+      - name: Audit production dependencies
+        run: pnpm audit --prod
+
+      - name: Package VSIX
+        run: |
+          VERSION="$(node -p "require('./package.json').version")"
+          pnpm dlx @vscode/vsce@3.9.2 package --no-dependencies --out "ssh-tools-${VERSION}.vsix"
+
+      - name: Upload VSIX
+        uses: actions/upload-artifact@v4
+        with:
+          name: ssh-tools-vsix
+          path: ssh-tools-*.vsix
+
+  vscode-integration:
+    needs: verify
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        vscode:
+          - 1.82.0
+          - stable
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@v4
+
+      - name: Install pnpm
+        uses: pnpm/action-setup@v4
+        with:
+          version: 10.34.4
+          run_install: false
+
+      - name: Set up Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: pnpm
+
+      - name: Install dependencies
+        run: pnpm install --frozen-lockfile
+
+      - name: Build production bundle
+        run: pnpm run package
+
+      - name: Test VS Code ${{ matrix.vscode }}
+        run: xvfb-run -a node scripts/run-vscode-integration.cjs "${{ matrix.vscode }}"

@@ -67,7 +67,6 @@
   "Task canceled": "タスクがキャンセルされました",
   "No changed files in watch mode": "監視モードでは変更されたファイルがありません",
   "Failed to execute packaging script: ": "パッケージ化スクリプトの実行に失敗しました：",
-  "Packaging error": "パッケージ化エラー：",
   "Packaging error:": "パッケージ化エラー：",
   "Remote file does not exist": "リモートファイルが存在しません",
   "Retry": "再試行",

@@ -2,6 +2,55 @@
 
 > 用於記錄每次版本的詳細改動，便於後續追蹤、回溯與驗證。
 
+## v0.6.2（2026-06-21）
+
+### 改善項目
+- **遠端資料夾確認快取**：`FileTransfer.checkExistFolder()` 會快取已確認存在的遠端資料夾，並合併同一資料夾正在進行中的檢查，降低大量檔案上傳時的重複遠端 metadata 查詢。
+- **watcher 快取更新順序**：`saveChangeFile()` 將未等待完成的 async `forEach` 改為逐一等待處理，讓 watch-cache merge 的順序與完成時機更可預期。
+- **watcher 快取序列化**：相同 config/workspace 的 workspaceState read/merge/write 會依序執行，避免快速連續事件互相覆寫。
+- **ignore 規則快取**：`getAllowFiles()` / `getAllFiles()` 重用已編譯的 ignore matcher，避免大量檔案 traversal 時重複編譯規則與重複讀取設定。
+- **動態並行探測頻率限制**：`addMaxConcurrency()` 依 config 重用正在進行中的探測，並加入冷卻時間，避免 task 高峰期重複建立測試連線。
+- **FTP 檔案時間同步策略快取**：成功的 FTP mtime 指令策略會依 server/config 快取；若快取策略失敗，會清除快取並回退到完整探測。
+- **依賴安全性**：更新正式依賴並透過 pnpm overrides 鎖定安全的傳遞版本；production audit 為零漏洞。
+
+### 修正項目
+- **VSIX Log grammar**：將 Log language configuration 與 TextMate grammar 移至 `package.json` 宣告的 `log/` 路徑，並確認發布清單包含兩個檔案。
+- **Windows 反向 ignore 路徑**：改用 workspace-root 相對解析，拒絕跳出 workspace 的規則，並支援精確檔案還原。
+
+### 變更項目
+- **測試流程**：`npm test` 現在執行有限次的 typecheck 與 Mocha 單元測試，不再透過 watch-mode compile pretest 卡住流程。
+- **TypeScript 與 Extension Host 型別**：TypeScript 更新至 5.9.3，VS Code 型別固定在 1.82.0，Node 型別維持 18.x。
+- **Lint 工具鏈**：遷移至 `eslint.config.cjs` flat config，更新 ESLint 至 9.39.4、typescript-eslint 至 8.61.1。
+- **Build／test 工具鏈**：更新 Mocha 至 11.7.6、webpack-cli 至 7.0.3、javascript-obfuscator 至 5.4.3；正式建置改以 `--mode production` 啟用混淆。
+
+### 功能新增
+- **P0 complexity baseline 測試架構**：新增 Mocha、TypeScript test compile、VS Code API mock，以及測試輸出目錄設定。
+- **聚焦基準測試**：新增遠端資料夾確認、watch-cache merge 行為、ignore-rule traversal、並行探測限流與 FTP mtime 策略快取的測試覆蓋。
+
+### 實作細節
+- `package.json`：新增有限次測試流程與測試編譯腳本。
+- `tsconfig.test.json`、`tests/setup/vscodeMock.ts`、`tests/**`：新增測試編譯與 mock fixtures。
+- `src/watchCache.ts`：抽出 watch-cache merge 邏輯，並新增 keyed async queue 防止並行覆寫。
+- `src/FileTransfer.ts`：新增遠端資料夾確認快取、in-flight dedupe、並行探測限流，以及 FTP mtime 策略快取。
+- `src/extension.ts`：改為等待每個 config 的 watcher 更新流程。
+- `src/utils.ts`：新增 ignore matcher 快取、精確檔案 traversal 與安全的 negated-rule 路徑解析。
+- `log/**`：放置 VSIX 實際引用的 Log 語言設定與 grammar。
+- `pnpm-workspace.yaml`：鎖定正式依賴的安全傳遞版本。
+
+### 文件更新
+- `CHANGELOG.md`：依 `Fixed` → `Improved` → `Changed` → `Added` 順序整理。
+- `docs/i18n/CHANGELOG.zh-TW.md`：同步下一版本內容與分類順序。
+- `docs/i18n/CHANGELOG_DETAIL.zh-TW.md`：新增下一版本詳細追蹤。
+- `docs/archive/complexity-report-2026-05-25.md`：保留 P0/P1/P2 完成狀態與剩餘 P3 的歷史分析快照。
+- `docs/REPORT.md`：作為唯一持續更新的程式改進路線圖。
+
+### 驗證結果
+- `npm test`：18 passing。
+- `npm run typecheck:strict`：通過。
+- `npm run lint`：0 errors（仍有既有 warnings）。
+- `npm run package`：webpack compiled successfully。
+- `pnpm audit --prod`：0 vulnerabilities。
+
 ## v0.6.1（2026-03-27）
 
 ### 修正項目
@@ -30,16 +79,10 @@
   - 修正：改用暫存檔（`localPath + '.ftp_tmp'`）寫入空格字元後上傳，上傳完畢後在 `finally` 區塊以 `fs.unlinkSync` 清理暫存檔。本地原始檔案不再被修改。
 - **編譯錯誤**：`FileTransfer.ts` 中 14 處 `console.log` 被替換為 `oConsole.log`，但遺漏了 import，導致 TS2304 錯誤。
 
-### 功能新增
-- **`skipIfSame`**（取代 `skipIfSameSize`）：重新命名以更精確反映語義。舊設定 `skipIfSameSize` 自動遷移，無需手動修改。
-- **`skipCompareMode`**：新增比對標準設定，可選值：
-  - `"size+mtime"`（預設）— 檔案大小與最後修改時間都相同才跳過
-  - `"size"` — 僅比對檔案大小
-  - `"mtime"` — 僅比對最後修改時間
+### 改善項目
+- **`skipIfSame` 命名調整**：取代 `skipIfSameSize`，以更精確反映語義。舊設定 `skipIfSameSize` 自動遷移，無需手動修改。
 - **跳過日誌改善**：檔案跳過時只輸出 `[skipUpload]` 一行，不再先顯示 `[upload]` 再顯示 `[skipUpload]`。
   - 實作方式：將 `shouldSkipUpload()` 檢查提前至 `executeTask` 中 `addTaskLog()` 之前執行。
-
-### 改善項目
 - **錯誤捕捉 (Error Handling)**：
   - `FileTransfer.ts` 中 5 處空 catch 區塊加上語意明確的英文註解。
   - `treeProvider.ts` 中 `clearFileCache` 的空 catch 區塊補上註解。
@@ -56,6 +99,12 @@
   - 所有 `client.close()` / `client.end()` 呼叫均包裹 try-catch，防止清理已斷線連線時拋錯導致整個清理流程中斷。
   - `releaseClient` 在連線池已滿（`>= maxConnections`）時直接關閉連線而非放回池中，避免池無限膨脹。
 - **`.vscode/` 加入 `.gitignore`**。
+
+### 功能新增
+- **`skipCompareMode`**：新增比對標準設定，可選值：
+  - `"size+mtime"`（預設）— 檔案大小與最後修改時間都相同才跳過
+  - `"size"` — 僅比對檔案大小
+  - `"mtime"` — 僅比對最後修改時間
 
 ### 實作細節
 - `src/utils.ts`：新增 `posixRelative()` 工具函式（匯出）。
@@ -99,6 +148,17 @@
 
 ## v0.6.0（2026-02-24）
 
+### 修正項目
+- 修正 SFTP `utimes` 無法設定檔案時間：`ssh2-sftp-client` 封裝器未暴露 `utimes` 方法，且 `config.type === 'sftp'` 跳過了 SSH touch 分支。
+- 修正 `zh-tw` 語系模板使用了錯誤的 `exampleZhText`（應為 `exampleTwText`）。
+- 修正 `syncFileTime` 設定在新建 config 時未出現的問題（utils.ts 預設回退）。
+- 修正 Windows 建置失敗（`NODE_ENV=production` → `--node-env production`）。
+- 修正認證流程為 `privateKeyPath` 優先，並在私鑰不可用時回退 `password`（限 `sftp/ssh`）。
+- 修正預設範本遺漏 `privateKeyPath`、`secretKeyPath` 欄位的問題。
+- 新增明確驗證錯誤訊息：FTP 密碼必填、私鑰路徑不存在且密碼為空、未配置任何認證資訊。
+- 修正 MOVE/rename 在 Windows 下未同步遠端舊路徑的問題：原本可能退回成「僅上傳新位置」，導致遠端舊檔殘留。
+- 修正 `uploadDelay` 行為描述與實際邏輯不一致：現在明確採用「最後一次修改後延遲 N 秒上傳」的防抖模式。
+
 ### 功能新增
 - 新增 `syncFileTime` 設定（預設 `false`）。
   - 上傳完成後可依本機檔案時間同步遠端時間。
@@ -113,17 +173,6 @@
   - 跳過時在輸出面板記錄 `[skipUpload]` 日誌。
 - 新增 `uploadDelay` 設定（預設 `0`，即時上傳）。
   - 最後一次修改後延遲指定秒數再觸發上傳（防抖），僅影響 `upload_on_save` 模式。
-
-### 修正項目
-- 修正 SFTP `utimes` 無法設定檔案時間：`ssh2-sftp-client` 封裝器未暴露 `utimes` 方法，且 `config.type === 'sftp'` 跳過了 SSH touch 分支。
-- 修正 `zh-tw` 語系模板使用了錯誤的 `exampleZhText`（應為 `exampleTwText`）。
-- 修正 `syncFileTime` 設定在新建 config 時未出現的問題（utils.ts 預設回退）。
-- 修正 Windows 建置失敗（`NODE_ENV=production` → `--node-env production`）。
-- 修正認證流程為 `privateKeyPath` 優先，並在私鑰不可用時回退 `password`（限 `sftp/ssh`）。
-- 修正預設範本遺漏 `privateKeyPath`、`secretKeyPath` 欄位的問題。
-- 新增明確驗證錯誤訊息：FTP 密碼必填、私鑰路徑不存在且密碼為空、未配置任何認證資訊。
-- 修正 MOVE/rename 在 Windows 下未同步遠端舊路徑的問題：原本可能退回成「僅上傳新位置」，導致遠端舊檔殘留。
-- 修正 `uploadDelay` 行為描述與實際邏輯不一致：現在明確採用「最後一次修改後延遲 N 秒上傳」的防抖模式。
 
 ### 實作細節
 - `src/FileTransfer.ts`：
@@ -158,18 +207,24 @@
 ```md
 ## vX.Y.Z（YYYY-MM-DD）
 
-### 功能新增
-- 
-
 ### 修正項目
-- 
+- 待補
+
+### 改善項目
+- 待補
+
+### 變更項目
+- 待補
+
+### 功能新增
+- 待補
 
 ### 實作細節
-- 
+- 待補
 
 ### 文件更新
-- 
+- 待補
 
 ### 驗證結果
-- 
+- 待補
 ```

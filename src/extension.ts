@@ -16,6 +16,7 @@ import { cleanLogTask, outputChannel } from "./output";
 import { StatusBarUi } from "./statusBar";
 import { Mutex } from 'async-mutex';
 import { CodeLensProvider, handleEncryptionOrDecryption } from "./CodeLensProvider"
+import { mergeWatchCacheEntry, runSerializedWatchCacheUpdate } from "./watchCache"
 
 const isDirectory = require("is-directory")
 var CryptoJS = require("crypto-js")
@@ -33,7 +34,7 @@ let saveFiles: Set<string> = new Set();
 // upload_on_save 延迟上传计时器（同一配置+同一路径只保留最后一次触发）
 const uploadOnSaveTimers: Map<string, NodeJS.Timeout> = new Map();
 
-// TODO 添加拖拽上传是否需要确认功能，添加ssh右键解压功能，有同步任务时需要刷新同步状态
+// TODO 添加ssh右键解压功能，有同步任务时需要刷新同步状态
 // TODO watch上传后未清空缓存，需要添加清空缓存功能
 // TODO 释放git操作exec
 // TODO 检查忽略文件提交
@@ -453,7 +454,7 @@ function scheduleUploadOnSave(
 		return
 	}
 
-	const latestOpType = JSON.parse(JSON.stringify(opType)) as opType
+	const latestOpType = { ...opType }
 	const timer = setTimeout(() => {
 		uploadOnSaveTimers.delete(timerKey)
 		uploadOnSave(item, file, latestOpType)
@@ -499,7 +500,7 @@ async function saveChangeFile(
 		let config = await getUserConfig(2, 2)
 		if (config) {
 			let list = toArray(config)
-			list.forEach(async (item, index) => {
+			for (const item of list) {
 				if (path.basename(file) == ".gitignore") {
 					//清空忽略文件配置缓存
 					await workspaceState.update("excludePath", "")
@@ -514,58 +515,28 @@ async function saveChangeFile(
 					if (!res) {
 						scheduleUploadOnSave(item, file, opType)
 					}
-					return
+					continue
 				}
 				// 判断是否监听项目
-				if (!item.watch) return
+				if (!item.watch) continue
 
 				// 检测是否排除
 				let res = await isIgnore(ignore_arr, file)
 				if (!res) {
 					let cache_key = item.name + "###" + rootPath
-					// 从 workspaceState 中读取数据
-					let globalData = workspaceState.get(cache_key)
-					let data: Record<string, opType> = {}
-
-					if (typeof globalData === "object" && globalData !== null) {
-						data = globalData as Record<string, opType>
-						// 防止对同一个文件重复操作
-						let newOpType = JSON.parse(JSON.stringify(opType));
-						if (data[file] && data[file].type == newOpType.type) {
-							if (data[file].op == 'add' && newOpType.op == 'delete') {
-								delete data[file]
-							} else if (data[file] && data[file].op == 'delete' && newOpType.op == 'add') {
-								delete data[file]
-							} else if (data[file] && data[file].op == 'add' && newOpType.op == 'rename' && newOpType.newname) {
-								newOpType.op = 'add'
-								data[newOpType.newname] = newOpType
-								delete data[file]
-							} else if (data[file] && data[file].op == 'edit' && newOpType.op == 'rename' && newOpType.newname) {
-								newOpType.op = 'add'
-								data[newOpType.newname] = newOpType
-								data[file].op = 'delete'
-							} else {
-								data[file] = opType
-							}
-						} else {
-							let flag = false
-							for (const [k, v] of Object.entries(data)) {
-								if ((newOpType.op == 'rename' || newOpType.op == 'delete') && v.newname && v.newname == file) {
-									flag = true
-									data[k] = newOpType
-								}
-							}
-							if (!flag) {
-								data[file] = opType
-							}
-						}
-					} else {
-						data[file] = opType
-					}
-					// 向 workspaceState 中写入数据
-					await workspaceState.update(cache_key, data)
+					await runSerializedWatchCacheUpdate(cache_key, async () => {
+						// 从 workspaceState 中读取数据
+						let globalData = workspaceState.get(cache_key)
+						let data = mergeWatchCacheEntry(
+							typeof globalData === "object" && globalData !== null ? globalData as Record<string, opType> : {},
+							file,
+							opType
+						)
+						// 向 workspaceState 中写入数据
+						await workspaceState.update(cache_key, data)
+					})
 				}
-			})
+			}
 			myEvent.fire("update")
 		}
 	}

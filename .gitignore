@@ -14,6 +14,13 @@ node_modules
 .vscode/
 .vscode-test/
 
+# debug/temp output
+.test-out/
+compile_errors.txt
+diff_output.txt
+git_log_output.txt
+git_status_output.txt
+
 # types
 sync_tools.jsonc
 sync_config.jsonc

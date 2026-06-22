@@ -965,7 +965,7 @@ export class DepNodeProvider implements vscode.TreeDataProvider<TreeItem>, vscod
 				let filePath = path.join(os.tmpdir(), CACHE_DIRNAME, obj.config.name, remotePath, value)
 				!fs.existsSync(path.dirname(filePath)) && fs.mkdirSync(path.dirname(filePath), { recursive: true })
 				fs.writeFileSync(filePath, ' ')
-				let task = {
+				const task: Task = {
 					config: obj.config,
 					localPath: filePath,
 					operationType: 'upload',
@@ -1119,7 +1119,7 @@ export class DepNodeProvider implements vscode.TreeDataProvider<TreeItem>, vscod
 		let { client, fileTransfer } = await this.getClient(obj.config)
 		if (!client) return
 		try {
-			let task = {
+			const task: Task = {
 				config: obj.config,
 				localPath: "",
 				remotePath: obj.realPath,

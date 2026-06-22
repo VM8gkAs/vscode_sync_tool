@@ -34,6 +34,7 @@ export interface DeployConfigItem {
     username: string; // 用户名 SFTP
     password?: string; // 密码
     privateKeyPath?: string; // 秘钥地址
+    secretKeyPath?: string; // 加密密钥文件路径
     proxy?: boolean; // 是否使用代理
     sock?: any;
     watch?: boolean; // 监听上传目录文件变动，如果是前端项目不建议启用，默认true
@@ -68,6 +69,8 @@ export interface FileTransferConfigItem extends DeployConfigItem {
     downloadExcludePath?: string|string[]; // 下载排除的文件及目录
 }
 
+export type TaskOperationType = "upload" | "download" | "delete" | "rename";
+
 // 定义任务接口
 export interface Task {
     id?: string; // 任务id
@@ -87,7 +90,7 @@ export interface Task {
     isDirectory?: boolean; // 是否文件夹
     useZip?: boolean;
     compare?: boolean;
-    operationType?: string;
+    operationType: TaskOperationType;
     fileChunks?: { start: number, end: number }[];
 }
 
