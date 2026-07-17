@@ -1,4 +1,6 @@
 {
+  "SyncTools.logToFile": "Écrire les journaux Output dans sync-tools.log, dans un dossier relatif à l’espace de travail. La valeur par défaut est false.",
+  "SyncTools.logDirectory": "Dossier relatif à l’espace de travail pour les journaux sur fichier. La valeur par défaut est sync_logs. Les chemins absolus ou hors de l’espace de travail sont refusés.",
   "SyncTools.title": "Outils de synchronisation FTP/SFTP/SSH",
   "SyncTools.refresh": "Actualiser",
   "SyncTools.upload": "Téléverser",

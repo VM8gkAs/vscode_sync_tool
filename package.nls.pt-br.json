@@ -1,4 +1,6 @@
 {
+  "SyncTools.logToFile": "Gravar os logs de Output em sync-tools.log em um diretório relativo ao workspace. O padrão é false.",
+  "SyncTools.logDirectory": "Diretório relativo ao workspace para logs em arquivo. O padrão é sync_logs. Caminhos absolutos e externos ao workspace são rejeitados.",
   "SyncTools.title": "Ferramenta de sincronização FTP/SFTP/SSH",
   "SyncTools.refresh": "Atualizar",
   "SyncTools.upload": "Enviar",

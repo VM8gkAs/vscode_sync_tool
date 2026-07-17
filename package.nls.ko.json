@@ -1,4 +1,6 @@
 {
+  "SyncTools.logToFile": "Output 로그를 작업 영역 기준 상대 디렉터리의 sync-tools.log에 기록합니다. 기본값은 false입니다.",
+  "SyncTools.logDirectory": "파일 로그용 작업 영역 기준 상대 디렉터리입니다. 기본값은 sync_logs입니다. 절대 경로와 작업 영역 외부 경로는 거부됩니다.",
   "SyncTools.title": "FTP/SFTP/SSH 동기화 도구",
   "SyncTools.refresh": "새로 고침",
   "SyncTools.upload": "업로드",

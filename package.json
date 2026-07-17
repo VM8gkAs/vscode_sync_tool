@@ -3,7 +3,7 @@
   "displayName": "FTP/SFTP/SSH Sync Tool",
   "publisher": "oorzc",
   "description": "%SyncTools.title%",
-  "version": "0.6.2",
+  "version": "0.6.3",
   "packageManager": "pnpm@10.34.4",
   "icon": "static/logo_new.png",
   "engines": {
@@ -180,7 +180,7 @@
       },
       {
         "command": "sync_tools.stopSync",
-        "title": "%SyncTools.pauseSync%",
+        "title": "%SyncTools.stopSync%",
         "icon": "$(debug-stop)"
       },
       {
@@ -409,6 +409,19 @@
           "default": true,
           "description": "%SyncTools.logShow%"
         },
+        "SyncTools.logToFile": {
+          "type": "boolean",
+          "default": false,
+          "scope": "resource",
+          "description": "%SyncTools.logToFile%"
+        },
+        "SyncTools.logDirectory": {
+          "type": "string",
+          "default": "sync_logs",
+          "minLength": 1,
+          "scope": "resource",
+          "description": "%SyncTools.logDirectory%"
+        },
         "SyncTools.confirmMoveOrUpload": {
           "type": "boolean",
           "default": true,
@@ -416,6 +429,7 @@
         },
         "SyncTools.logNumberLimit": {
           "type": "number",
+          "minimum": 1,
           "default": 500,
           "description": "%SyncTools.logNumberLimit%"
         },

@@ -1,4 +1,6 @@
 {
+  "SyncTools.logToFile": "Scrive i log di Output in sync-tools.log in una directory relativa all'area di lavoro. Il valore predefinito è false.",
+  "SyncTools.logDirectory": "Directory relativa all'area di lavoro per i log su file. Il valore predefinito è sync_logs. I percorsi assoluti o esterni all'area di lavoro vengono rifiutati.",
   "SyncTools.title": "Strumenti di sincronizzazione FTP/SFTP/SSH",
   "SyncTools.refresh": "Aggiorna",
   "SyncTools.upload": "Carica",

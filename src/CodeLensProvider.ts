@@ -7,6 +7,25 @@ import { getPluginSetting, getRootPath, generateRandomPassword, oConsole } from 
 import { l10n } from "vscode"
 var CryptoJS = require("crypto-js")
 
+// Type definitions for CodeLensProvider
+interface ConfigValue {
+  label: string
+  username?: string
+  password?: string
+  secretKeyPath?: string
+  [key: string]: string | undefined
+}
+
+interface EncryptionObj {
+  value: ConfigValue
+  key: string
+}
+
+interface Modification {
+  path: string[]
+  value: string
+}
+
 class JsonCodeLensProvider implements vscode.CodeLensProvider {
   // 提供 CodeLens
   provideCodeLenses(document: vscode.TextDocument): vscode.CodeLens[] {
@@ -82,7 +101,7 @@ export function CodeLensProvider(context: vscode.ExtensionContext) {
     vscode.commands.registerCommand("sync_tools.changeSecretKey", async (filePath, obj) => {
       try {
 
-        const secretKeyPath = getOrCreateSecretKeyPath(obj);
+        const secretKeyPath = getOrCreateSecretKeyPath(obj, filePath);
         const secretKey = getOrCreateSecretKey(secretKeyPath);
 
         // 打开文件并获取 TextDocument 对象
@@ -105,11 +124,11 @@ export function CodeLensProvider(context: vscode.ExtensionContext) {
 export async function handleEncryptionOrDecryption(
   action: string,
   filePath: string,
-  obj: { value: any; key: any }
+  obj: EncryptionObj
 ) {
   try {
     if (!fs.existsSync(filePath)) return
-    const secretKeyPath = getOrCreateSecretKeyPath(obj);
+    const secretKeyPath = getOrCreateSecretKeyPath(obj, filePath);
     const secretKey = getOrCreateSecretKey(secretKeyPath);
 
     let content = fs.readFileSync(filePath, "utf8")
@@ -161,8 +180,9 @@ export async function handleEncryptionOrDecryption(
 
 
 // 获取或创建密钥路径
-function getOrCreateSecretKeyPath(obj: { value: any }): string {
-  const homeDirectory = path.join(os.homedir(), 'vscode_sync_tool', path.basename(getRootPath()));
+function getOrCreateSecretKeyPath(obj: EncryptionObj, configFilePath: string): string {
+  const workspaceRoot = getRootPath(configFilePath);
+  const homeDirectory = path.join(os.homedir(), 'vscode_sync_tool', path.basename(workspaceRoot));
   let secretKeyPath = path.join(homeDirectory, 'secret_key_' + obj.value.label + '.txt');
   if (obj.value.secretKeyPath) {
     if (!fs.existsSync(obj.value.secretKeyPath)) {
@@ -197,7 +217,7 @@ export function getDecryptionCode(key: string = "", newSecretKey: string) {
 function updateContent(
   filePath: string,
   content: string,
-  modifications: { path: any; value: any }[]
+  modifications: Modification[]
 ) {
   return new Promise<void>((resolve, reject) => {
     modifications.forEach(({ path, value }) => {
@@ -222,7 +242,7 @@ interface Position {
 interface KeyWithPosition {
   key: string
   position: Position
-  value: unknown
+  value: ConfigValue
 }
 
 function getTopLevelKeysWithPosition(jsonContent: string): KeyWithPosition[] {
@@ -251,7 +271,7 @@ function getTopLevelKeysWithPosition(jsonContent: string): KeyWithPosition[] {
                   start: keyNode.offset, // 键名的起始位置（字符索引）
                   end: keyNode.offset + keyNode.length, // 键名的结束位置（字符索引）
                 },
-                value: { label: nodeKey.value, ...getNodeValue(valueNode) }, // 键对应的值
+                value: { label: nodeKey.value, ...getNodeValue(valueNode) } as ConfigValue, // 键对应的值
               })
             }
           }

@@ -9,13 +9,15 @@ import * as vscode from "vscode"
 import FileTransfer from "./FileTransfer"
 import { myEvent } from './events/myEvent';
 
-import { Dependency } from "./treeProvider"
+import type { Dependency } from "./treeProvider"
 import { FileOpType, FileTransferConfigItem } from "./types/config"
-import { oConsole, getAllFiles, checkSubmitGit, getAllowFiles, verityConfig, getRootPath, throttle, posixRelative } from "./utils"
+import { oConsole, getAllFiles, checkSubmitGit, getAllowFiles, verityConfig, getRootPath, throttle, posixRelative, getConfigScopeKey } from "./utils"
 import { getContext } from "./config/globals"
 import { ClientConnectionError, NoWatchFilesError } from "./types/connect"
 import { addLogTask } from "./output"
 import { StatusBarUi } from "./statusBar"
+import { FileTransferClient } from "./types/client"
+import { flushWatchCacheUpdates } from "./watchCache"
 
 const { log, error } = oConsole
 
@@ -23,21 +25,21 @@ export class Deploy {
 	label: string
 	config: FileTransferConfigItem
 	fileTransfer: FileTransfer
-	files: any[] //需要上传的文件或文件夹
-	rename_files: any[] //需要重命名的文件或文件夹
-	delete_files: any[] //需要删除的文件或文件夹
+	files: FileOpType[] //需要上传的文件或文件夹
+	rename_files: FileOpType[] //需要重命名的文件或文件夹
+	delete_files: FileOpType[] //需要删除的文件或文件夹
 	zipPath: string
 	useZip: boolean
 	context: vscode.ExtensionContext
 	rootPath: string
 	taskList: {
-		task: () => void | Promise<any>
+		task: () => void | Promise<void>
 		type: string
 		tip: string
 		increment: number
 		async?: boolean
 	}[]
-	client: any
+	client: FileTransferClient
 	all_upload: boolean
 	isCanceled: boolean // 添加一个取消标志位
 
@@ -45,7 +47,7 @@ export class Deploy {
 		this.label = dependency.config.name
 		this.config = dependency.config;
 		this.context = getContext();
-		this.rootPath = getRootPath()
+		this.rootPath = this.config.workspaceRoot || getRootPath()
 		this.zipPath = ""
 		this.useZip = false
 		this.all_upload = false
@@ -54,6 +56,7 @@ export class Deploy {
 		this.delete_files = []
 		this.fileTransfer = new FileTransfer(this.config)
 		this.isCanceled = false // 初始化为 false，表示未取消
+		this.client = {} as FileTransferClient
 
 		this.taskList = [
 			{ type: 'check config', task: this.checkConfig, tip: l10n.t('Configuration check'), increment: 0, async: true },
@@ -106,8 +109,13 @@ export class Deploy {
 				}
 				if (this.isCanceled) {
 					this.files = []
+					await this.fileTransfer.finalizeQueue(this.config, 'cancelled')
 					reject(new Error(l10n.t('Task canceled')))
 				} else {
+					const queue = FileTransfer.queues[getConfigScopeKey(this.config)]
+					if (!queue || queue.idle()) {
+						await this.fileTransfer.finalizeQueue(this.config, 'completed')
+					}
 					resolve()
 				}
 			} catch (err) {
@@ -118,11 +126,7 @@ export class Deploy {
 					vscode.window.showErrorMessage(`${msg}: ${err?.toString()}`);
 				}
 				// await FileTransfer.changeAsyncStatus(this.config.name, 'stop')
-				myEvent.fire({
-					name: this.label,
-					status: 'complete_sync',
-					type: 'refreshSyncStatus',
-				})
+				await this.fileTransfer.finalizeQueue(this.config, 'failed')
 				reject(err)
 			}
 		});
@@ -147,6 +151,7 @@ export class Deploy {
 			const workspaceState = this.context.workspaceState
 			// 从 workspaceState 中读取数据
 			let cache_key = this.label + "###" + this.rootPath
+			await flushWatchCacheUpdates(cache_key)
 			let newGlobalData = workspaceState.get(cache_key)
 
 			if (typeof newGlobalData === "object" && newGlobalData !== null) {
@@ -216,7 +221,7 @@ export class Deploy {
 			childProcess.exec(
 				`${build}`,
 				{ cwd: this.rootPath, maxBuffer: 1024 * 1024 * 1024 },
-				(e: { message: any } | null) => {
+				(e: Error | null) => {
 					if (e === null) {
 						resolve()
 					} else {
@@ -500,6 +505,7 @@ export class Deploy {
 			config: this.config,
 			localPath,
 			remotePath,
+			pathChangeType: v.opType.pathChangeType,
 			operationType: 'rename'
 		});
 	}
@@ -522,7 +528,7 @@ export class Deploy {
 		let time = dayjs().format('YYYY-MM-DD HH:mm:ss')
 		let status_txt = status ? `[${status}]` : ''
 		let txt = `[${time}][${config.name}][${config.type}][${type}]${status_txt}: ${msg}`;
-		addLogTask(txt);
+		addLogTask(txt, config);
 	}
 
 

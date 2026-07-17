@@ -1,4 +1,6 @@
 {
+  "SyncTools.logToFile": "Output günlüklerini çalışma alanına göreli bir dizindeki sync-tools.log dosyasına yazar. Varsayılan değer false'tur.",
+  "SyncTools.logDirectory": "Dosya günlükleri için çalışma alanına göreli dizin. Varsayılan değer sync_logs'tur. Mutlak yollar ve çalışma alanı dışındaki yollar reddedilir.",
   "SyncTools.title": "FTP/SFTP/SSH Senkronizasyon Aracı",
   "SyncTools.refresh": "Yenile",
   "SyncTools.upload": "Yükle",

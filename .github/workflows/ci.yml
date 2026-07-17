@@ -44,7 +44,7 @@ jobs:
         run: pnpm run typecheck:strict
 
       - name: Run lint error gate
-        run: pnpm run lint -- --quiet
+        run: pnpm run lint --quiet
 
       - name: Build production bundle
         run: pnpm run package

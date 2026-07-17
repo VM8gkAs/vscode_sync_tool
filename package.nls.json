@@ -1,4 +1,6 @@
 {
+  "SyncTools.logToFile": "Write Output logs to sync-tools.log in a workspace-relative directory. Default is false.",
+  "SyncTools.logDirectory": "Workspace-relative directory for file logs. Default is sync_logs. Absolute paths and paths outside the workspace are rejected.",
   "SyncTools.title": "FTP/SFTP/SSH Sync Tool",
   "SyncTools.refresh": "Refresh",
   "SyncTools.upload": "Upload",

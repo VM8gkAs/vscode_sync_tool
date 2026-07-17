@@ -1,10 +1,42 @@
-// 操作文件类型
-export interface opType {
-    op: string,
-    type: string,
-    newname?: string,
-    md5?: string,
+import type { Socket } from "net";
+
+export type PathChangeType = "rename" | "move";
+export type WatchEntryType = "file" | "directory";
+
+interface WatchOperationBase {
+    type: WatchEntryType;
+    md5?: string;
 }
+
+interface NonRenameWatchOperationBase extends WatchOperationBase {
+    newname?: never;
+    pathChangeType?: never;
+}
+
+export type AddWatchOperation = NonRenameWatchOperationBase & {
+    op: "add";
+};
+
+export type EditWatchOperation = NonRenameWatchOperationBase & {
+    op: "edit";
+};
+
+export type DeleteWatchOperation = NonRenameWatchOperationBase & {
+    op: "delete";
+};
+
+export type RenameWatchOperation = WatchOperationBase & {
+    op: "rename";
+    newname: string;
+    pathChangeType?: PathChangeType;
+};
+
+// 操作文件类型
+export type opType =
+    | AddWatchOperation
+    | EditWatchOperation
+    | DeleteWatchOperation
+    | RenameWatchOperation;
 
 export interface FileOpType {
     file: string;
@@ -36,7 +68,7 @@ export interface DeployConfigItem {
     privateKeyPath?: string; // 秘钥地址
     secretKeyPath?: string; // 加密密钥文件路径
     proxy?: boolean; // 是否使用代理
-    sock?: any;
+    sock?: Socket;
     watch?: boolean; // 监听上传目录文件变动，如果是前端项目不建议启用，默认true
     upload_on_save?: boolean; // 保存后实时提交，建议单人开发使用，upload_on_save设置为true时，watch、submit_git_before_upload、compress、deleteRemote无效，默认false
     submit_git_before_upload?: boolean; // 团队开发使用，上传代码前提交本地git，防止覆盖远程代码，默认true
@@ -57,7 +89,10 @@ export interface DeployConfigItem {
     remotePath: string; // 上传服务器地址  
     excludePath?: string | string[]; //  排除的上传文件及目录
     downloadPath?: string; //  (非必填) 下载路径，默认为当前项目根目录，手动下载文件、文件夹时使用，可以指定下载地址
+    localTraversalConcurrency?: number; // 本地目录扫描并行度，1 为序列，默认 4
+    downloadTraversalConcurrency?: number; // 远端下载目录扫描并行度，1 恢复序列行为，默认 2
     default?: boolean; // 默认配置
+    workspaceRoot?: string; // 所屬 workspace folder；runtime 注入，不寫回 sync_config.jsonc
 }
 
 export interface FileTransferConfigItem extends DeployConfigItem {
@@ -70,6 +105,7 @@ export interface FileTransferConfigItem extends DeployConfigItem {
 }
 
 export type TaskOperationType = "upload" | "download" | "delete" | "rename";
+export type TaskTerminalState = "completed" | "failed" | "cancelled" | "stopped";
 
 // 定义任务接口
 export interface Task {
@@ -91,6 +127,7 @@ export interface Task {
     useZip?: boolean;
     compare?: boolean;
     operationType: TaskOperationType;
+    pathChangeType?: PathChangeType;
     fileChunks?: { start: number, end: number }[];
 }
 

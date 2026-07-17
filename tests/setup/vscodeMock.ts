@@ -1,3 +1,5 @@
+import path from 'path';
+
 type LoadedModule = (...args: any[]) => any;
 
 const Module = require('module') as { _load: LoadedModule };
@@ -12,6 +14,11 @@ const configurationValues: Record<string, any> = {
 };
 
 const workspaceStateValues = new Map<string, any>();
+
+export const vscodeMockOutput = {
+	value: '',
+	clearCount: 0
+};
 
 export const vscodeMockExtensionContext: any = {
 	workspaceState: {
@@ -28,6 +35,13 @@ export const vscodeMock: any = {
 	},
 	workspace: {
 		workspaceFolders: [] as { uri: { fsPath: string } }[],
+		textDocuments: [] as any[],
+		getWorkspaceFolder: (uri: { fsPath: string }) => {
+			return vscodeMock.workspace.workspaceFolders.find((folder: { uri: { fsPath: string } }) => {
+				const relative = path.relative(folder.uri.fsPath, uri.fsPath);
+				return relative === '' || (relative !== '..' && !relative.startsWith(`..${path.sep}`) && !path.isAbsolute(relative));
+			});
+		},
 		getConfiguration: () => ({
 			get: (key: string, defaultValue?: any) => Object.prototype.hasOwnProperty.call(configurationValues, key)
 				? configurationValues[key]
@@ -38,8 +52,13 @@ export const vscodeMock: any = {
 	window: {
 		createOutputChannel: () => ({
 			show: () => undefined,
-			clear: () => undefined,
-			appendLine: () => undefined,
+			clear: () => {
+				vscodeMockOutput.value = '';
+				vscodeMockOutput.clearCount++;
+			},
+			appendLine: (line: string) => {
+				vscodeMockOutput.value += `${line}\n`;
+			},
 			dispose: () => undefined
 		}),
 		createStatusBarItem: () => ({
@@ -77,6 +96,24 @@ export const vscodeMock: any = {
 		fire(value: T) {
 			this.listeners.forEach(listener => listener(value));
 		}
+	},
+	TreeItemCollapsibleState: {
+		None: 0,
+		Collapsed: 1,
+		Expanded: 2
+	},
+	TreeItem: class MockTreeItem {
+		label: string;
+		collapsibleState: number;
+		constructor(label: string, collapsibleState: number = 0) {
+			this.label = label;
+			this.collapsibleState = collapsibleState;
+		}
+	},
+	ThemeIcon: class MockThemeIcon {
+		static File = new (class { id = 'file'; })();
+		static Folder = new (class { id = 'folder'; })();
+		constructor(public id: string) {}
 	},
 	Uri: {
 		file: (fsPath: string) => ({ fsPath, path: fsPath }),
@@ -118,9 +155,12 @@ export function installVscodeMock() {
 	};
 }
 
-export function resetVscodeMock(workspaceRoot?: string) {
-	vscodeMock.workspace.workspaceFolders = workspaceRoot ? [{ uri: { fsPath: workspaceRoot } }] : [];
+export function resetVscodeMock(workspaceRoot?: string | string[]) {
+	const roots = Array.isArray(workspaceRoot) ? workspaceRoot : workspaceRoot ? [workspaceRoot] : [];
+	vscodeMock.workspace.workspaceFolders = roots.map(fsPath => ({ uri: { fsPath } }));
 	workspaceStateValues.clear();
+	vscodeMockOutput.value = '';
+	vscodeMockOutput.clearCount = 0;
 }
 
 export function setConfigurationValue(key: string, value: any) {

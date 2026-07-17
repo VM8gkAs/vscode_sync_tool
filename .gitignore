@@ -7,7 +7,9 @@ Thumbs.db
 
 # build/deps/package
 dist
+/lib/
 node_modules
+/types/
 *.vsix
 
 # local VS Code

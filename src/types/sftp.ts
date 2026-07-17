@@ -77,9 +77,9 @@ declare class sftp {
 
     end(): Promise<void>;
 
-    on(event: string, callback: (...args: any[]) => void): void;
+    on(event: string, callback: (...args: unknown[]) => void): void;
 
-    removeListener(event: string, callback: (...args: any[]) => void): void;
+    removeListener(event: string, callback: (...args: unknown[]) => void): void;
 
     posixRename(fromPath: string, toPath: string): Promise<string>;
 

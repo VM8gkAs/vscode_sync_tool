@@ -1,4 +1,6 @@
 {
+  "SyncTools.logToFile": "是否將 Output 日誌寫入工作區相對目錄中的 sync-tools.log，預設為 false",
+  "SyncTools.logDirectory": "檔案日誌的工作區相對目錄，預設為 sync_logs；不接受絕對路徑或工作區外路徑",
   "SyncTools.title": "FTP/SFTP/SSH 同步工具",
   "SyncTools.refresh": "刷新",
   "SyncTools.upload": "上傳",

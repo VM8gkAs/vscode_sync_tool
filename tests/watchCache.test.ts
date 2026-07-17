@@ -1,15 +1,22 @@
 import assert from 'assert';
-import { mergeWatchCacheEntry, runSerializedWatchCacheUpdate } from '../src/watchCache';
+import {
+	buildWatchRenameIndex,
+	clearWatchCache,
+	flushWatchCacheUpdates,
+	mergeWatchCacheEntry,
+	queueWatchCacheUpdate,
+	runSerializedWatchCacheUpdate
+} from '../src/watchCache';
 import { opType } from '../src/types/config';
 
 describe('mergeWatchCacheEntry', () => {
 	it('stores a copy so later caller mutations do not alter the cache', () => {
-		const operation = { op: 'add', type: 'file' };
+		const operation: opType = { op: 'add', type: 'file' };
 		const data = mergeWatchCacheEntry({}, '/project/file.txt', operation);
 
 		assert.notStrictEqual(data['/project/file.txt'], operation);
-		operation.op = 'delete';
-		assert.equal(data['/project/file.txt'].op, 'add');
+		operation.type = 'directory';
+		assert.equal(data['/project/file.txt'].type, 'file');
 	});
 
 	it('removes a pending add when the same file is deleted', () => {
@@ -34,7 +41,7 @@ describe('mergeWatchCacheEntry', () => {
 		);
 
 		assert.deepStrictEqual(data, {
-			'/workspace/b.txt': { op: 'add', type: 'file', newname: '/workspace/b.txt' }
+			'/workspace/b.txt': { op: 'add', type: 'file' }
 		});
 	});
 
@@ -49,7 +56,7 @@ describe('mergeWatchCacheEntry', () => {
 
 		assert.deepStrictEqual(data, {
 			'/workspace/a.txt': { op: 'delete', type: 'file' },
-			'/workspace/b.txt': { op: 'add', type: 'file', newname: '/workspace/b.txt' }
+			'/workspace/b.txt': { op: 'add', type: 'file' }
 		});
 	});
 
@@ -113,5 +120,72 @@ describe('mergeWatchCacheEntry', () => {
 		assert.deepStrictEqual(events, ['first:start', 'second:start']);
 		releaseFirst?.();
 		await first;
+	});
+
+	it('batches ordered file events into one workspace-state write', async () => {
+		const key = 'main###batched-workspace';
+		let value: unknown = {};
+		let updateCalls = 0;
+		const storage = {
+			get: <T>(_key: string) => value as T,
+			update: async (_key: string, nextValue: unknown) => {
+				updateCalls++;
+				value = nextValue;
+			}
+		};
+
+		const add = queueWatchCacheUpdate(storage, key, '/workspace/a.txt', { op: 'add', type: 'file' });
+		const rename = queueWatchCacheUpdate(storage, key, '/workspace/a.txt', {
+			op: 'rename',
+			type: 'file',
+			newname: '/workspace/b.txt'
+		});
+		await flushWatchCacheUpdates(key);
+		await Promise.all([add, rename]);
+
+		assert.strictEqual(updateCalls, 1);
+		assert.deepStrictEqual(value, {
+			'/workspace/b.txt': { op: 'add', type: 'file' }
+		});
+	});
+
+	it('flushes queued events before clearing the watch cache', async () => {
+		const key = 'main###clear-workspace';
+		let value: unknown = {};
+		const writes: unknown[] = [];
+		const storage = {
+			get: <T>(_key: string) => value as T,
+			update: async (_key: string, nextValue: unknown) => {
+				writes.push(nextValue);
+				value = nextValue;
+			}
+		};
+
+		const queued = queueWatchCacheUpdate(storage, key, '/workspace/a.txt', { op: 'add', type: 'file' });
+		await clearWatchCache(storage, key);
+		await queued;
+
+		assert.strictEqual(writes.length, 2);
+		assert.strictEqual(value, '');
+	});
+
+	it('updates duplicate rename targets through the index without scanning all entries', () => {
+		const data: Record<string, opType> = {
+			'/workspace/a.txt': { op: 'rename', type: 'file', newname: '/workspace/target.txt' },
+			'/workspace/b.txt': { op: 'rename', type: 'file', newname: '/workspace/target.txt' }
+		};
+		const index = buildWatchRenameIndex(data);
+
+		mergeWatchCacheEntry(
+			data,
+			'/workspace/target.txt',
+			{ op: 'delete', type: 'file' },
+			index
+		);
+
+		assert.deepStrictEqual(data, {
+			'/workspace/a.txt': { op: 'delete', type: 'file' },
+			'/workspace/b.txt': { op: 'delete', type: 'file' }
+		});
 	});
 });

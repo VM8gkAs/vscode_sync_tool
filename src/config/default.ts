@@ -39,6 +39,8 @@ export const configText = `{
     "excludePath": [],
     "downloadPath": "",
     "downloadExcludePath": [],
+    "localTraversalConcurrency": 4,
+    "downloadTraversalConcurrency": 2,
     "default": false
 }`
 
@@ -568,6 +570,22 @@ const SCHEMA_FIELDS: FieldDef[] = [
             tr: "(Opsiyonel) İndirme hariçleri",
             pl: "(Opcjonalne) Wykluczenia pobierania",
             ja: "（任意）ダウンロード除外",
+        })
+    },
+    {
+        key: "localTraversalConcurrency",
+        value: 4,
+        comments: makeComments("Local directory scan concurrency (1-16); 1 minimizes disk load with serial async I/O, default is 4", {
+			"zh-cn": "本地目录扫描并行度（1-16）；1 使用异步串行 I/O 以降低磁盘负载，默认 4",
+			"zh-tw": "本機目錄掃描併行度（1-16）；1 使用非同步序列 I/O 以降低磁碟負載，預設 4",
+        })
+    },
+    {
+        key: "downloadTraversalConcurrency",
+        value: 2,
+        comments: makeComments("Remote download directory scan concurrency (1-16); 1 restores serial traversal, higher values increase instantaneous remote/network load, default is 2", {
+			"zh-cn": "远端下载目录扫描并行度（1-16）；1 恢复串行遍历，较高值会增加远端与网络瞬时负载，默认 2",
+			"zh-tw": "遠端下載目錄掃描併行度（1-16）；1 恢復序列走訪，較高值會增加遠端與網路瞬時負載，預設 2",
         })
     },
     {

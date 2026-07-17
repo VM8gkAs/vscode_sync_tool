@@ -3,20 +3,19 @@ import * as os from "os"
 import * as path from "path"
 import * as vscode from "vscode"
 import { l10n } from "vscode"
-import { FileTransferConfigItem, opType } from './types/config';
+import { FileTransferConfigItem, opType, Task } from './types/config';
 import { CACHE_DIRNAME, URI_SCHEME } from './config/config';
-import { addConfig, getUserConfig, toArray, isIgnore, getRootPath, getIgnoreConfig, debounce, generateRandomPassword, getPluginSetting, sleep, showInformationMessage, posixRelative, oConsole } from "./utils"
+import { addConfig, getUserConfig, toArray, getRootPath, getIgnoreConfig, debounce, generateRandomPassword, getPluginSetting, sleep, showInformationMessage, posixRelative, oConsole, getWorkspaceRoots, getWorkspaceStateKey, getConfigScopeKey, getConfigCacheDirectoryName, resolveWatchChangeForIgnore } from "./utils"
 import { uploadOnSave } from "./events/uploadOnSave"
 import { myEvent } from "./events/myEvent"
 import { DepNodeProvider } from "./treeProvider"
 import { getContext, setContext } from "./config/globals";
 import FileTransfer from "./FileTransfer";
 import { MemFS } from "./FileProvider";
-import { cleanLogTask, outputChannel } from "./output";
+import { cleanLogTask, outputChannel, updateProgress } from "./output";
 import { StatusBarUi } from "./statusBar";
-import { Mutex } from 'async-mutex';
 import { CodeLensProvider, handleEncryptionOrDecryption } from "./CodeLensProvider"
-import { mergeWatchCacheEntry, runSerializedWatchCacheUpdate } from "./watchCache"
+import { clearWatchCache, flushAllWatchCacheUpdates, queueWatchCacheUpdate } from "./watchCache"
 
 const isDirectory = require("is-directory")
 var CryptoJS = require("crypto-js")
@@ -35,10 +34,8 @@ let saveFiles: Set<string> = new Set();
 const uploadOnSaveTimers: Map<string, NodeJS.Timeout> = new Map();
 
 // TODO 添加ssh右键解压功能，有同步任务时需要刷新同步状态
-// TODO watch上传后未清空缓存，需要添加清空缓存功能
 // TODO 释放git操作exec
 // TODO 检查忽略文件提交
-// TODO 下载忽略文件测试
 // TODO ssh压缩解压
 // TODO 翻译多国语言
 
@@ -54,17 +51,15 @@ export async function activate(context: vscode.ExtensionContext) {
 	// 在扩展启动时，将 context 设置为全局变量
 	setContext(context)
 
-	await context.workspaceState.update("sync_config", "")
+	for (const workspaceRoot of getWorkspaceRoots()) {
+		await context.workspaceState.update(getWorkspaceStateKey("sync_config", workspaceRoot), "")
+	}
 	vscode.commands.executeCommand("setContext", "canEdit", false);
 
 	const provider = new MemFS();
 	context.subscriptions.push(vscode.workspace.registerFileSystemProvider(URI_SCHEME, provider, { isCaseSensitive: true }));
 
-	let rootPath = getRootPath()
 	treeProvider = new DepNodeProvider()
-
-	let mutex = new Mutex();  // 初始化锁
-
 
 	// 注册树视图
 	TreeView = vscode.window.createTreeView("asyncToolsView", {
@@ -77,27 +72,27 @@ export async function activate(context: vscode.ExtensionContext) {
 	// context.subscriptions.push(treeProvider);
 
 	// 监听自定义事件触发
-	myEvent.event(async (eventType: any) => {
-		if (eventType == 'update') {
+	myEvent.event(async (eventType) => {
+		if (eventType === 'update') {
 			debouncedUpdateViewCount()
 		}
-		if (eventType == 'updateMenu') {
+		if (eventType === 'updateMenu') {
 			debouncedRefreshMenu()
 		}
-		if (typeof eventType == 'object') {
-			if (eventType.type == 'refreshNode') {
-				// 获取锁
-				const release = await mutex.acquire();
-				try {
-					// 执行任务
-					await treeProvider.uploadComplete(eventType.task)
-				} finally {
-					// 释放锁
-					release();
-				}
+		if (typeof eventType === 'object' && eventType !== null) {
+			if (eventType.type === 'refreshNode') {
+				treeProvider.queueUploadComplete(eventType.task)
 			}
-			if (eventType.type == 'refreshSyncStatus') {
-				treeProvider.updateSyncStatus(eventType.name, eventType.status)
+			if (eventType.type === 'refreshSyncStatus') {
+				if (eventType.workspaceRoot) {
+					if (eventType.status === 'complete_sync') {
+						await treeProvider.flushUploadComplete(getConfigScopeKey({
+							name: eventType.name,
+							workspaceRoot: eventType.workspaceRoot
+						}))
+					}
+					await treeProvider.updateSyncStatus(eventType.name, eventType.status, eventType.workspaceRoot)
+				}
 			}
 		}
 	})
@@ -108,24 +103,23 @@ export async function activate(context: vscode.ExtensionContext) {
 	let handleAddConfig = vscode.commands.registerCommand(
 		"sync_tools.addConfig",
 		async () => {
-			await addConfig(
-				rootPath
-			)
-			myEvent.fire("update")
+			const rootPath = await getCommandWorkspaceRoot()
+			if (!rootPath) return
+			await addConfig(rootPath)
+			myEvent.fire("updateMenu")
 		}
 	)
 	context.subscriptions.push(handleAddConfig)
 
 	// 获取 workspaceState 对象
 	const workspaceState = context.workspaceState;
-	workspaceState.update("sync_config", "")
 
 	// 注册清除所有缓存的命令
 	vscode.commands.registerCommand("sync_tools.clearAllCache", () => clearAllCache(workspaceState))
 	// 注册关闭所有连接命令
 	vscode.commands.registerCommand("sync_tools.closeAllClient", async () => {
 		myEvent.fire("updateMenu")
-		FileTransfer.closeAll()
+		await FileTransfer.closeAll()
 	})
 	//清除日志记录
 	vscode.commands.registerCommand('sync_tools.clearAllLog', () => {
@@ -134,12 +128,13 @@ export async function activate(context: vscode.ExtensionContext) {
 	// 显示日志输出
 	vscode.commands.registerCommand('sync_tools.outputShow', () => {
 		treeProvider.getAllNodes()
+		updateProgress(true)
 		outputChannel.show(true)
 	});
 
 	// 右键上传文件
 	vscode.commands.registerCommand('sync_tools.uploadFilesByExplorer', async (source) => {
-		const item = await getDefaultConfig();
+		const item = await getDefaultConfig(source.fsPath);
 		if (item) {
 			await uploadFileTask(item, source.fsPath);
 		}
@@ -147,7 +142,7 @@ export async function activate(context: vscode.ExtensionContext) {
 
 	// 右键对比远程文件
 	vscode.commands.registerCommand('sync_tools.compareFileByExplorer', async (source) => {
-		const item = await getDefaultConfig();
+		const item = await getDefaultConfig(source.fsPath);
 		if (item) {
 			await compareFileTask(item, source.fsPath);
 		}
@@ -156,6 +151,8 @@ export async function activate(context: vscode.ExtensionContext) {
 	//打开项目设置
 	context.subscriptions.push(
 		vscode.commands.registerCommand('sync_tools.editConfig', async () => {
+			const rootPath = await getCommandWorkspaceRoot()
+			if (!rootPath) return
 			let configPath = path.join(rootPath, 'sync_config.jsonc')
 			if (!fs.existsSync(configPath)) return
 
@@ -185,12 +182,24 @@ export async function activate(context: vscode.ExtensionContext) {
 }
 
 
+async function getCommandWorkspaceRoot() {
+	const activeFile = vscode.window.activeTextEditor?.document.uri.fsPath;
+	const activeRoot = activeFile ? getRootPath(activeFile) : "";
+	if (activeRoot) return activeRoot;
+	const roots = getWorkspaceRoots();
+	if (roots.length === 1) return roots[0];
+	const selected = await vscode.window.showWorkspaceFolderPick();
+	return selected?.uri.fsPath || "";
+}
+
 // 获取默认配置
-async function getDefaultConfig() {
-	const config = await getUserConfig(2);
+async function getDefaultConfig(sourcePath: string) {
+	const rootPath = getRootPath(sourcePath);
+	if (!rootPath) return null;
+	const config = await getUserConfig(2, 1, rootPath);
 	if (!config) return null;
 
-	const defaultConfig = toArray(config).filter(v => v.default);
+	const defaultConfig = toArray(config, rootPath).filter(v => v.default);
 	if (defaultConfig.length === 0) {
 		vscode.window.showErrorMessage(l10n.t("Please set the default configuration first: {default: true}"));
 		return null;
@@ -203,7 +212,8 @@ async function getDefaultConfig() {
 
 // 生成远程路径
 function generateRemotePath(item: FileTransferConfigItem, sourcePath: string) {
-	let rootPath = getRootPath()
+	const rootPath = item.workspaceRoot || getRootPath(sourcePath)
+	if (!rootPath) throw new Error(`File is outside the workspace: ${sourcePath}`)
 	return path.posix.join(item.type !== "ftp" ? item.remotePath : "/", posixRelative(rootPath, sourcePath));
 }
 
@@ -223,7 +233,7 @@ async function uploadFileTask(item: FileTransferConfigItem, sourcePath: string) 
 // 比对文件任务
 async function compareFileTask(item: FileTransferConfigItem, sourcePath: string) {
 	const remotePath = generateRemotePath(item, sourcePath);
-	const localPath = path.join(os.tmpdir(), CACHE_DIRNAME, item.name, remotePath);
+	const localPath = path.join(os.tmpdir(), CACHE_DIRNAME, getConfigCacheDirectoryName(item), remotePath);
 	new FileTransfer(item);
 	await FileTransfer.addTask({
 		config: item,
@@ -250,15 +260,10 @@ function isInRenamingFolder(fsPath: string): boolean {
 
 // 注册文件创建监听器
 function initFileEvents(context: vscode.ExtensionContext): void {
-	let rootPath = getRootPath()
-	if (!rootPath) return
+	if (!getWorkspaceRoots().length) return
 
-	// 创建文件系统观察者
-	const directoryToWatch = vscode.Uri.file(rootPath);
-	const fileWatcher = vscode.workspace.createFileSystemWatcher(
-		// 指定要监听的目录路径
-		new vscode.RelativePattern(directoryToWatch, '**/*')
-	);
+	// 單一 watcher 涵蓋所有 workspace folders；事件再以 getWorkspaceFolder 精確歸屬。
+	const fileWatcher = vscode.workspace.createFileSystemWatcher('**/*');
 
 	// 创建文件系统观察者
 	// const fileWatcher = vscode.workspace.createFileSystemWatcher('**/*');
@@ -278,13 +283,10 @@ function initFileEvents(context: vscode.ExtensionContext): void {
 				return
 			}
 
-			if (uri.fsPath.indexOf(rootPath) == -1) return
-			let opType = {
+			if (!getRootPath(uri.fsPath)) return
+			const opType: opType = {
 				op: "add",
-				type: "file"
-			}
-			if (isDirectory.sync(uri.fsPath)) {
-				opType.type = "directory"
+				type: isDirectory.sync(uri.fsPath) ? "directory" : "file"
 			}
 			saveChangeFile(context, uri.fsPath, opType)
 		})
@@ -301,15 +303,15 @@ function initFileEvents(context: vscode.ExtensionContext): void {
 			return;
 		}
 
-		if (uri.fsPath.indexOf(rootPath) == -1) return
+		if (!getRootPath(uri.fsPath)) return
 		if (fs.lstatSync(uri.fsPath).isDirectory()) {
-			let opType = {
+			const opType: opType = {
 				op: "add",
 				type: "directory"
 			}
 			saveChangeFile(context, uri.fsPath, opType)
 		} else {
-			let opType = {
+			const opType: opType = {
 				op: "add",
 				type: "file"
 			}
@@ -348,9 +350,9 @@ function initFileEvents(context: vscode.ExtensionContext): void {
 		vscode.workspace.onWillDeleteFiles(async (e) => {
 			for (const v of e.files) {
 				oConsole.log(`删除了：${v.fsPath}`)
-				if (v.fsPath.indexOf(rootPath) == -1) continue
+				if (!getRootPath(v.fsPath)) continue
 				if (fs.lstatSync(v.fsPath).isDirectory()) {
-					let opType = {
+					const opType: opType = {
 						op: "delete",
 						type: "directory"
 					}
@@ -364,7 +366,7 @@ function initFileEvents(context: vscode.ExtensionContext): void {
 					// 	await saveChangeFile(context, vv, opType2)
 					// }
 				} else {
-					let opType = {
+					const opType: opType = {
 						op: "delete",
 						type: "file"
 					}
@@ -381,7 +383,7 @@ function initFileEvents(context: vscode.ExtensionContext): void {
 			const { files } = event
 			for (const v of files) {
 				oConsole.log(`重命名了：${v.oldUri} 为 ${v.newUri}`)
-				if (v.oldUri.fsPath.indexOf(rootPath) == -1) continue
+				if (!getRootPath(v.oldUri.fsPath)) continue
 
 				const isDir = isDirectory.sync(v.oldUri.fsPath);
 
@@ -407,13 +409,10 @@ function initFileEvents(context: vscode.ExtensionContext): void {
 					}
 				}, 10000);
 
-				let opType = {
+				const opType: opType = {
 					op: "rename",
-					type: "file",
+					type: isDir ? "directory" : "file",
 					newname: v.newUri.fsPath
-				}
-				if (isDir) {
-					opType.type = "directory"
 				}
 				saveChangeFile(context, v.oldUri.fsPath, opType)
 			}
@@ -425,11 +424,12 @@ function initFileEvents(context: vscode.ExtensionContext): void {
 async function clearAllCache(workspaceState: vscode.Memento) {
 	vscode.window.showInformationMessage(l10n.t('Are you sure you want to clear all watch caches?'), l10n.t('Confirm'), l10n.t('Cancel')).then(async selection => {
 		if (selection === l10n.t('Confirm')) {
+			await flushAllWatchCacheUpdates()
 			// 获取所有key
 			let keys = workspaceState.keys();
 			// 清空所有缓存
 			for (const v of keys) {
-				await workspaceState.update(v, '');
+				await clearWatchCache(workspaceState, v)
 			}
 			myEvent.fire("update")
 		}
@@ -441,7 +441,7 @@ function scheduleUploadOnSave(
 	file: string,
 	opType: opType
 ) {
-	const timerKey = `${item.name}###${file}`
+	const timerKey = `${getConfigScopeKey(item)}###${file}`
 	const existingTimer = uploadOnSaveTimers.get(timerKey)
 	if (existingTimer) {
 		clearTimeout(existingTimer)
@@ -481,61 +481,51 @@ async function saveChangeFile(
 	let rootPath = getRootPath(file)
 	if (rootPath) {
 		// 如果是操作的根目录下面的配置文件
-		if (path.basename(file) == "sync_config.jsonc" || (opType.newname && path.basename(opType.newname) == "sync_config.jsonc")) {
-			//清空sync_config缓存
-			await workspaceState.update("sync_config", "")
-			await workspaceState.update("excludePath", "")
+		if (path.basename(file) === "sync_config.jsonc" || (opType.newname && path.basename(opType.newname) === "sync_config.jsonc")) {
+			const previousConfig = await getUserConfig(2, 2, rootPath)
+			// 清空此 workspace 的 config cache。
+			await workspaceState.update(getWorkspaceStateKey("sync_config", rootPath), "")
 			setTimeout(async () => {
-				//重新生成配置
-				await getUserConfig(2, 2)
-				//关闭连接
-				await FileTransfer.closeAll()
-				// 刷新视图显示
+				if (previousConfig) {
+					for (const item of toArray(previousConfig, rootPath)) {
+						await FileTransfer.closeAll(item)
+					}
+				}
+				await getUserConfig(2, 2, rootPath)
 				myEvent.fire("updateMenu")
 
 			}, 100);
 			return
 		}
 
-		let config = await getUserConfig(2, 2)
+		let config = await getUserConfig(2, 2, rootPath)
 		if (config) {
-			let list = toArray(config)
+			let list = toArray(config, rootPath)
 			for (const item of list) {
-				if (path.basename(file) == ".gitignore") {
-					//清空忽略文件配置缓存
-					await workspaceState.update("excludePath", "")
-					//清空ignore_config缓存
-					await workspaceState.update("ignore_config_" + item.name, "")
+				if (path.basename(file) === ".gitignore") {
+					// 清除此 workspace/config 的 .gitignore cache。
+					await workspaceState.update(getWorkspaceStateKey("ignore_config", rootPath, item.name), "")
 				}
 				let ignore_arr = await getIgnoreConfig(item, file)
+				const resolvedChange = await resolveWatchChangeForIgnore(ignore_arr, file, opType)
+				if (!resolvedChange) continue
 				// 判断是否直传代码
 				if (item.upload_on_save) {
 					// 检测是否排除
-					let res = await isIgnore(ignore_arr, file)
-					if (!res) {
-						scheduleUploadOnSave(item, file, opType)
-					}
+					scheduleUploadOnSave(item, resolvedChange.file, resolvedChange.opType)
 					continue
 				}
 				// 判断是否监听项目
 				if (!item.watch) continue
 
 				// 检测是否排除
-				let res = await isIgnore(ignore_arr, file)
-				if (!res) {
-					let cache_key = item.name + "###" + rootPath
-					await runSerializedWatchCacheUpdate(cache_key, async () => {
-						// 从 workspaceState 中读取数据
-						let globalData = workspaceState.get(cache_key)
-						let data = mergeWatchCacheEntry(
-							typeof globalData === "object" && globalData !== null ? globalData as Record<string, opType> : {},
-							file,
-							opType
-						)
-						// 向 workspaceState 中写入数据
-						await workspaceState.update(cache_key, data)
-					})
-				}
+				let cache_key = item.name + "###" + rootPath
+				await queueWatchCacheUpdate(
+					workspaceState,
+					cache_key,
+					resolvedChange.file,
+					resolvedChange.opType
+				)
 			}
 			myEvent.fire("update")
 		}
@@ -545,7 +535,7 @@ async function saveChangeFile(
 
 // 防抖设置
 let debounceSave = debounce(async (document) => {
-	let rootPath = getRootPath()
+	let rootPath = getRootPath(document.uri.fsPath)
 	let context = getContext()
 	oConsole.log(`保存了文件`, document)
 
@@ -555,20 +545,20 @@ let debounceSave = debounce(async (document) => {
 		saveFiles.delete(document.uri.fsPath)
 	}, 10000);
 
-	if (document.uri.fsPath.indexOf(rootPath) == -1) {
+	if (!rootPath) {
 		let pathArr = document.uri.fsPath.split(path.sep)
 		if (pathArr.length < 3) return
-		let config_name = pathArr[1]
+		let configScope = decodeURIComponent(pathArr[1])
 		let remotePath = pathArr.slice(3).join("/")
 		let localPath = pathArr.slice(4).join("/")
 		localPath = localPath ? localPath : remotePath
-		let filePath = path.join(os.tmpdir(), CACHE_DIRNAME, config_name, localPath)
-		await treeProvider.saveFile(config_name, document.getText(), filePath, remotePath)
+		let filePath = path.join(os.tmpdir(), CACHE_DIRNAME, pathArr[1], localPath)
+		await treeProvider.saveFile(configScope, document.getText(), filePath, remotePath)
 		return
 	}
 
 	// 执行你的操作
-	let opType = {
+	const opType: opType = {
 		op: "edit",
 		type: "file"
 	}
@@ -591,6 +581,8 @@ let debouncedRefreshMenu = debounce(() => {
 
 // 销毁周期
 export async function deactivate() {
+	await flushAllWatchCacheUpdates()
+	await treeProvider?.flushUploadComplete()
 	StatusBarUi.dispose()
-	FileTransfer.closeAll()
+	await FileTransfer.closeAll()
 }

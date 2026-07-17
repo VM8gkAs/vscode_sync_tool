@@ -1,4 +1,6 @@
 {
+  "SyncTools.logToFile": "Zapisuj dzienniki Output do pliku sync-tools.log w katalogu względnym wobec obszaru roboczego. Wartość domyślna to false.",
+  "SyncTools.logDirectory": "Katalog względny wobec obszaru roboczego dla dzienników plikowych. Wartość domyślna to sync_logs. Ścieżki bezwzględne i spoza obszaru roboczego są odrzucane.",
   "SyncTools.title": "Narzędzie synchronizacji FTP/SFTP/SSH",
   "SyncTools.refresh": "Odśwież",
   "SyncTools.upload": "Prześlij",

@@ -11,7 +11,8 @@ export const uploadOnSave = async (
 	file: string,
 	opType: opType
 ) => {
-	let rootPath = getRootPath()
+	let rootPath = config.workspaceRoot || getRootPath(file)
+	if (!rootPath) return
 	new FileTransfer(config)
 	try {
 		const { type } = config
@@ -50,6 +51,7 @@ export const uploadOnSave = async (
 					localPath,
 					remotePath: path.posix.join('/', remotePath),
 					fileType: opType.type,
+					pathChangeType: opType.pathChangeType,
 					operationType: 'rename'
 				}, true);
 				break

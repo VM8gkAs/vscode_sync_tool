@@ -6,16 +6,25 @@ import { Deploy } from './deploy';
 import * as vscode from "vscode";
 import FileTransfer from './FileTransfer';
 import { myEvent } from "./events/myEvent"
+import type { SyncStatus } from "./events/myEvent"
 import { getContext } from './config/globals';
 import { addLogTask, updateTaskProgress } from './output';
 import { CACHE_DIRNAME, URI_SCHEME } from './config/config';
 import { FileTransferConfigItem, Task } from './types/config';
 import { l10n, TreeItem, ThemeIcon, TreeItemCollapsibleState, ProviderResult } from 'vscode';
-import { toArray, getUserConfig, getRootPath, inputMsg, debounce, sleep, getUseTime, formatFileSize, getPluginSetting, showInformationMessage, splitPath, getParentPath, sortFiles, isValidLinuxPermission, permissionsToOctal, getNormalPath, oConsole } from "./utils";
+import { toArray, getUserConfig, inputMsg, debounce, getUseTime, formatFileSize, getPluginSetting, showInformationMessage, splitPath, getParentPath, sortFiles, isValidLinuxPermission, permissionsToOctal, getNormalPath, oConsole, getWorkspaceRoots, getConfigScopeKey, getConfigCacheDirectoryName } from "./utils";
+import { FileTransferClient, FTPRemoteFileInfo, isFTPClient, isSFTPClient, RemoteFileInfo, SFTPFileInfo } from "./types/client";
 import { NoWatchFilesError } from './types/connect';
+import { clearWatchCache } from './watchCache';
 
 // 记录是否拖放
 let isDragging = false
+const TREE_REFRESH_DEBOUNCE_MS = 50
+
+type PendingTreeRefresh = {
+	tasks: Task[];
+	timer: NodeJS.Timeout;
+}
 
 export class RepositoryFile {
 	name: string = '';
@@ -63,7 +72,7 @@ export class Dependency extends TreeItem {
 }
 
 
-let deployInstance: Deploy
+const deployInstances = new Map<string, Deploy>()
 
 export class RepositoryFileNode extends TreeItem {
 	realPath: string;
@@ -114,8 +123,8 @@ export class DepNodeProvider implements vscode.TreeDataProvider<TreeItem>, vscod
 	private count: number;
 	private items: Dependency[];
 	private context: vscode.ExtensionContext;
-	private rootPath: string;
-	private allNodes: { [key: string]: Dependency | RepositoryFileNode } = {}; // 使用对象结构存储节点
+	private pendingTreeRefreshes = new Map<string, PendingTreeRefresh>();
+	private allNodes = new Map<string, Dependency | RepositoryFileNode>();
 	refreshTimer: string | number | NodeJS.Timeout | undefined;
 
 
@@ -124,7 +133,6 @@ export class DepNodeProvider implements vscode.TreeDataProvider<TreeItem>, vscod
 		this.count = 0
 		this.items = []
 		this.context = getContext();
-		this.rootPath = getRootPath();
 		this.getMenu()
 		isDragging = false
 
@@ -312,34 +320,79 @@ export class DepNodeProvider implements vscode.TreeDataProvider<TreeItem>, vscod
 		await this.changeMenuStatus(item, 'restart_sync')
 	}
 
-	async uploadComplete(task: Task) {
-		await sleep(300)
+	queueUploadComplete(task: Task) {
+		const scopeKey = getConfigScopeKey(task.config)
+		const existing = this.pendingTreeRefreshes.get(scopeKey)
+		if (existing) {
+			existing.tasks.push(task)
+			return
+		}
+
+		this.pendingTreeRefreshes.set(scopeKey, {
+			tasks: [task],
+			timer: setTimeout(() => {
+				void this.flushUploadComplete(scopeKey).catch(() => undefined)
+			}, TREE_REFRESH_DEBOUNCE_MS)
+		})
+	}
+
+	async flushUploadComplete(scopeKey?: string) {
+		const scopeKeys = scopeKey ? [scopeKey] : Array.from(this.pendingTreeRefreshes.keys())
+		for (const key of scopeKeys) {
+			const pending = this.pendingTreeRefreshes.get(key)
+			if (!pending) continue
+			clearTimeout(pending.timer)
+			this.pendingTreeRefreshes.delete(key)
+
+			const changedNodes = new Set<Dependency | RepositoryFileNode>()
+			for (const task of pending.tasks) {
+				await this.applyUploadComplete(task, changedNodes)
+			}
+			for (const node of changedNodes) {
+				if (node.children.length > 1) {
+					node.children = sortFiles(node.children, true)
+				}
+				this._onDidChangeTreeData.fire(node)
+			}
+		}
+	}
+
+	private cancelUploadComplete(scopeKey: string) {
+		const pending = this.pendingTreeRefreshes.get(scopeKey)
+		if (!pending) return
+		clearTimeout(pending.timer)
+		this.pendingTreeRefreshes.delete(scopeKey)
+	}
+
+	private async applyUploadComplete(task: Task, changedNodes: Set<Dependency | RepositoryFileNode>) {
+		const scopeKey = getConfigScopeKey(task.config)
 		switch (task.operationType) {
 			case 'upload':
-				let existObj = this.allNodes[task.config.name + "###" + task.remotePath]
+				let existObj = this.allNodes.get(scopeKey + "###" + task.remotePath)
 				if (existObj && existObj instanceof RepositoryFileNode) {
-					let filePath = path.join(os.tmpdir(), CACHE_DIRNAME, task.config.name, task.config.type === 'ftp' ? existObj.realPath : path.relative(task.config.remotePath, existObj.realPath))
+					let filePath = path.join(os.tmpdir(), CACHE_DIRNAME, getConfigCacheDirectoryName(task.config), task.config.type === 'ftp' ? existObj.realPath : path.relative(task.config.remotePath, existObj.realPath))
 					this.checkToClose(existObj, false);
-					if (fs.existsSync(filePath)) fs.unlinkSync(filePath)
+					await fs.promises.rm(filePath, { force: true }).catch(() => undefined)
 				} else {
 					let newPaths = splitPath(task.remotePath)
-					let obj = this.findExistingPath(this.allNodes, newPaths, task)
-					obj && this._onDidChangeTreeData.fire(obj);
+					let obj = this.findExistingPath(newPaths, task, false)
+					if (obj) changedNodes.add(obj)
 				}
 				break;
 			case 'delete':
-				let deleteObj = this.allNodes[task.config.name + "###" + task.remotePath]
+				let deleteObj = this.allNodes.get(scopeKey + "###" + task.remotePath)
 				if (deleteObj && deleteObj instanceof RepositoryFileNode) {
-					deleteObj.parent.children = deleteObj.parent.children.filter(v => v.realPath !== task.remotePath)
+					const parent = deleteObj.parent
+					parent.children = parent.children.filter(v => v.realPath !== task.remotePath)
 					this.checkToClose(deleteObj);
-					this._onDidChangeTreeData.fire(deleteObj.parent);
+					changedNodes.add(parent)
 				}
 				break;
 			case 'rename':
 				let remotePath = task.remotePath
 				let localPath = task.localPath
 				let realRenameFPath = path.posix.join('/', path.dirname(remotePath), path.basename(localPath))
-				let renameObj = this.allNodes[task.config.name + "###" + realRenameFPath]
+				let renameObj = this.allNodes.get(scopeKey + "###" + realRenameFPath)
 				if (renameObj && renameObj instanceof RepositoryFileNode) {
 					let file: RepositoryFile =
 					{
@@ -348,15 +401,15 @@ export class DepNodeProvider implements vscode.TreeDataProvider<TreeItem>, vscod
 						size: renameObj.file.size
 					}
 					let obj = renameObj.parent
-					obj.children.map((v: RepositoryFileNode, i) => {
-						if (v.realPath == realRenameFPath) {
+					for (const [i, v] of obj.children.entries()) {
+						if (v.realPath === realRenameFPath) {
 							let newObj = new RepositoryFileNode(file, v.parent, v.parent.realPath)
-							this.allNodes[newObj.config.name + "###" + newObj.realPath] = newObj;
+							this.addNode(newObj);
 							obj.children[i] = newObj
 						}
-					})
+					}
 					this.checkToClose(renameObj);
-					this._onDidChangeTreeData.fire(obj);
+					changedNodes.add(obj)
 				}
 				break;
 			default:
@@ -365,17 +418,19 @@ export class DepNodeProvider implements vscode.TreeDataProvider<TreeItem>, vscod
 
 	}
 
-	findExistingPath(a1: { [x: string]: Dependency | RepositoryFileNode }, a2: string[], task: Task) {
+	findExistingPath(a2: string[], task: Task, sortChildren: boolean = true) {
 		let obj = null
+		const scopeKey = getConfigScopeKey(task.config)
 		for (let i = a2.length - 1; i >= 0; i--) { // 从后往前遍历a2
 			let currentPath = a2[i];
 			// 检查路径在 a1 中是否存在
-			if (!a1[task.config.name + "###" + currentPath]) {
+			if (!this.allNodes.has(scopeKey + "###" + currentPath)) {
 				// 获取上一级路径
 				let parentPath = getParentPath(currentPath);
 				// 如果上一级存在于a1中，则返回上一级路径
-				if (a1[task.config.name + "###" + parentPath]) {
-					obj = a1[task.config.name + "###" + parentPath];
+				const parentNode = this.allNodes.get(scopeKey + "###" + parentPath)
+				if (parentNode) {
+					obj = parentNode;
 					if (obj instanceof Dependency && (!obj.isRun || obj.collapsibleState === TreeItemCollapsibleState.None)) {
 						break
 					}
@@ -394,10 +449,10 @@ export class DepNodeProvider implements vscode.TreeDataProvider<TreeItem>, vscod
 							let exist = obj.children.filter(v => v.realPath == currentPath)
 							if (!exist.length) {
 								let newObj = new RepositoryFileNode(file, obj, parentPath)
-								this.allNodes[newObj.config.name + "###" + newObj.realPath] = newObj;
+								this.addNode(newObj);
 								obj.children.push(newObj);
 							}
-							obj.children = sortFiles(obj.children, true)
+							if (sortChildren) obj.children = sortFiles(obj.children, true)
 							break;
 						default:
 							break;
@@ -409,14 +464,14 @@ export class DepNodeProvider implements vscode.TreeDataProvider<TreeItem>, vscod
 		return obj;
 	}
 
-	async updateSyncStatus(name: string, type: string) {
+	async updateSyncStatus(name: string, type: SyncStatus, workspaceRoot: string = "") {
 		let obj = Array.from(this.items)
-		let findOne = obj.find(v => v.config.name === name)
+		let findOne = obj.find(v => getConfigScopeKey(v.config) === getConfigScopeKey({ name, workspaceRoot }))
 		if (findOne) {
-			if (type == 'start_sync' && findOne.contextValue != 'tools_sync') {
+			if (type === 'start_sync' && findOne.contextValue !== 'tools_sync') {
 				await this.changeMenuStatus(findOne, type)
 			}
-			if (type == 'complete_sync') {
+			if (type === 'complete_sync') {
 				await this.changeMenuStatus(findOne, type)
 			}
 		}
@@ -453,22 +508,17 @@ export class DepNodeProvider implements vscode.TreeDataProvider<TreeItem>, vscod
 					item.isRun = true
 					break;
 				case 'disconnect':
+					this.cancelUploadComplete(getConfigScopeKey(item.config))
+					this.evictNodeSubtree(item)
 					item.iconPath = new ThemeIcon("vm-outline");
 					item.contextValue = "tools_disconnect"
 					item.collapsibleState = vscode.TreeItemCollapsibleState.None
 					item.children = []
 					item.isLoading = true
 					item.isRun = false
-					FileTransfer.changeAsyncStatus(item.config.name, 'stop')
-					FileTransfer.closeAll(item.config.name)
+					await FileTransfer.closeAll(item.config)
 
 					// 清除缓存节点
-					for (const [k, v] of Object.entries(this.allNodes)) {
-						let arr = k.split('###')
-						if (arr && arr[0] && arr[0] === item.config.name) {
-							delete this.allNodes[k]
-						}
-					}
 					break;
 				case 'complete_sync':
 					item.iconPath = item.isRun ? new ThemeIcon("vm-active") : new ThemeIcon("vm-outline");
@@ -492,19 +542,22 @@ export class DepNodeProvider implements vscode.TreeDataProvider<TreeItem>, vscod
 					this._onDidChangeTreeData.fire();
 					this.items = obj
 					// 执行上传
-					deployInstance = new Deploy(item)
-					deployInstance.start()
+					const deployInstance = new Deploy(item)
+					deployInstances.set(getConfigScopeKey(item.config), deployInstance)
+					void deployInstance.start()
+						.catch(() => undefined)
+						.finally(() => deployInstances.delete(getConfigScopeKey(item.config)))
 					break;
 				case 'stop_sync':
 					item.iconPath = item.isRun ? new ThemeIcon("vm-active") : new ThemeIcon("vm-outline");
 					item.contextValue = item.isRun ? "tools_connect" : "tools_disconnect"
-					FileTransfer.changeAsyncStatus(item.config.name, 'stop')
-					deployInstance && deployInstance.cancel()
+					await FileTransfer.changeAsyncStatus(item.config, 'stop', 'cancelled')
+					deployInstances.get(getConfigScopeKey(item.config))?.cancel()
 					break;
 				case 'pause_sync':
 					item.iconPath = new ThemeIcon("debug-pause");
 					item.contextValue = "tools_sync_pause"
-					FileTransfer.changeAsyncStatus(item.config.name, 'pause')
+					await FileTransfer.changeAsyncStatus(item.config, 'pause')
 					break;
 				case 'restart_sync':
 					item.iconPath = {
@@ -512,7 +565,7 @@ export class DepNodeProvider implements vscode.TreeDataProvider<TreeItem>, vscod
 						light: vscode.Uri.file(path.join(__filename, '..', '..', 'static', 'sync_dark.svg'))
 					};
 					item.contextValue = "tools_sync"
-					FileTransfer.changeAsyncStatus(item.config.name, 'restart')
+					await FileTransfer.changeAsyncStatus(item.config, 'restart')
 					break;
 				default:
 					break;
@@ -522,6 +575,7 @@ export class DepNodeProvider implements vscode.TreeDataProvider<TreeItem>, vscod
 				item.iconPath = item.isRun ? new ThemeIcon("vm-active") : new ThemeIcon("vm-outline");
 				item.contextValue = item.isRun ? "tools_connect" : "tools_disconnect"
 			} else {
+				this.evictNodeSubtree(item)
 				item.iconPath = new ThemeIcon("vm-outline");
 				item.contextValue = "tools_disconnect"
 				item.collapsibleState = vscode.TreeItemCollapsibleState.None
@@ -543,7 +597,7 @@ export class DepNodeProvider implements vscode.TreeDataProvider<TreeItem>, vscod
 		return { client, fileTransfer }
 	}
 
-	async releaseClient(client: any, config: FileTransferConfigItem) {
+	async releaseClient(client: FileTransferClient, config: FileTransferConfigItem) {
 		let fileTransfer = new FileTransfer(config)
 		await fileTransfer.releaseClient(client, config)
 	}
@@ -554,7 +608,10 @@ export class DepNodeProvider implements vscode.TreeDataProvider<TreeItem>, vscod
 
 
 	refresh(status: boolean = false): void {
-		if (status) this.items = []
+		if (status) {
+			this.items = []
+			this.allNodes.clear()
+		}
 		this.getMenu()
 		this._onDidChangeTreeData.fire();
 	}
@@ -601,24 +658,24 @@ export class DepNodeProvider implements vscode.TreeDataProvider<TreeItem>, vscod
 			default:
 				break;
 		}
+		this.evictNodeSubtree(node, false)
 		node.children = []
 		this._onDidChangeTreeData.fire(node);
 
 		if (['refresh', 'rename', 'delete'].includes(type)) {
-			this.clearFileCache(node)
+			await this.clearFileCache(node)
 		}
 	}
 
-	clearFileCache(node: Dependency | RepositoryFileNode) {
+	async clearFileCache(node: Dependency | RepositoryFileNode) {
 		// 清理文件缓存
 		try {
 			if (node instanceof RepositoryFileNode) {
-				let filePath = path.join(os.tmpdir(), CACHE_DIRNAME, node.config.name, node.config.type === 'ftp' ? node.realPath : path.relative(node.config.remotePath, node.realPath))
-				if (!fs.existsSync(filePath)) return
-				fs.rmSync(filePath, { recursive: true })
+				let filePath = path.join(os.tmpdir(), CACHE_DIRNAME, getConfigCacheDirectoryName(node.config), node.config.type === 'ftp' ? node.realPath : path.relative(node.config.remotePath, node.realPath))
+				await fs.promises.rm(filePath, { recursive: true, force: true })
 			} else if (node instanceof Dependency) {
-				let filePath = path.join(os.tmpdir(), CACHE_DIRNAME, node.config.name)
-				fs.rmSync(filePath, { recursive: true })
+				let filePath = path.join(os.tmpdir(), CACHE_DIRNAME, getConfigCacheDirectoryName(node.config))
+				await fs.promises.rm(filePath, { recursive: true, force: true })
 			}
 		} catch (error) {
 			// cache directory may not exist, safe to ignore
@@ -631,34 +688,34 @@ export class DepNodeProvider implements vscode.TreeDataProvider<TreeItem>, vscod
 	}
 
 	async getMenu() {
-		// 获取 workspaceState 对象
 		const workspaceState = this.context.workspaceState;
-		let config = await getUserConfig(2)
+		const workspaceRoots = getWorkspaceRoots();
+		const showWorkspaceName = workspaceRoots.length > 1;
+		const configList: Dependency[] = [];
 		this.count = 0
-		if (config) {
-			this.items = []
-			const configList = toArray(config).map((item, index) => {
-				// 从 workspaceState 中读取数据
-				let cache_key = item.name + '###' + this.rootPath
-				let newGlobalData = workspaceState.get(cache_key);
-				// let tooltip = `服务器：${item.name} 地址：${item.config.host}`;
+
+		for (const workspaceRoot of workspaceRoots) {
+			const config = await getUserConfig(2, 1, workspaceRoot)
+			if (!config) continue
+			for (const item of toArray(config, workspaceRoot)) {
+				const cache_key = item.name + '###' + workspaceRoot
+				const newGlobalData = workspaceState.get(cache_key);
+				const workspaceName = path.basename(workspaceRoot);
 				let tooltip = l10n.t('Server: {0}   Address: {1}', item.name, item.host);
-				let description = item.host;
+				let description = showWorkspaceName ? `${workspaceName} · ${item.host}` : item.host;
 
 				if (typeof newGlobalData === 'object' && newGlobalData !== null) {
-					let count = Object.keys(newGlobalData).length
+					const count = Object.keys(newGlobalData).length
 					if (count) {
 						tooltip = l10n.t('Server: {0}   Address: {1}   Not uploaded: {2}', item.name, item.host, count);
-						description = count ? `(${count}) ${item.host}` : `${item.host}`;
+						description = `(${count}) ${description}`;
 					}
 					this.count += count
 				}
-				return new Dependency(item, 0, tooltip, description, index);
-			});
-			this.items = configList
-		} else {
-			this.items = []
+				configList.push(new Dependency(item, 0, tooltip, description, configList.length));
+			}
 		}
+		this.items = configList
 	}
 
 	getAllNodes() {
@@ -668,7 +725,17 @@ export class DepNodeProvider implements vscode.TreeDataProvider<TreeItem>, vscod
 
 	// 添加单个节点，使用节点的唯一ID作为键
 	private addNode(node: Dependency | RepositoryFileNode): void {
-		this.allNodes[node.config.name + "###" + node.realPath] = node;
+		this.allNodes.set(getConfigScopeKey(node.config) + "###" + node.realPath, node);
+	}
+
+	private evictNodeSubtree(node: Dependency | RepositoryFileNode, includeNode: boolean = true): void {
+		const pending = includeNode ? [node] : [...node.children]
+		while (pending.length) {
+			const current = pending.pop()
+			if (!current) continue
+			pending.push(...current.children)
+			this.allNodes.delete(getConfigScopeKey(current.config) + "###" + current.realPath)
+		}
 	}
 
 	// 批量添加节点
@@ -733,20 +800,21 @@ export class DepNodeProvider implements vscode.TreeDataProvider<TreeItem>, vscod
 		}
 	}
 
-	mapFilesToNodes(files: any[], element: Dependency | RepositoryFileNode, remotePath: string): RepositoryFileNode[] {
+	mapFilesToNodes(files: RemoteFileInfo[], element: Dependency | RepositoryFileNode, remotePath: string): RepositoryFileNode[] {
 		let filesArr: RepositoryFile[] = [];
-		files.map((v: any) => {
+		for (const v of files) {
 			const isFTP = element.config.type == 'ftp';
 			const isValidFTP = isFTP && (v.type == 1 || v.type == 2);
 			const isValidOther = !isFTP && (v.type == 'd' || v.type == '-');
 
 			let permission = ''
 			if (isFTP) {
-				if (v.permissions) {
-					permission = v.permissions.user + "" + v.permissions.group + "" + v.permissions.world
+				const ftpFile = v as FTPRemoteFileInfo;
+				if (ftpFile.permissions) {
+					permission = ftpFile.permissions.user + "" + ftpFile.permissions.group + "" + ftpFile.permissions.world
 				}
 			} else {
-				permission = permissionsToOctal(v.rights)
+				permission = permissionsToOctal((v as SFTPFileInfo).rights)
 			}
 
 			if (isValidFTP || isValidOther) {
@@ -757,7 +825,7 @@ export class DepNodeProvider implements vscode.TreeDataProvider<TreeItem>, vscod
 					permission
 				});
 			}
-		});
+		}
 		filesArr = sortFiles(filesArr)
 		return filesArr.map((file: RepositoryFile) => new RepositoryFileNode(file, element, remotePath));
 	}
@@ -766,9 +834,9 @@ export class DepNodeProvider implements vscode.TreeDataProvider<TreeItem>, vscod
 		let { client } = await this.getClient(obj.config)
 		if (!client) return
 
-		let filePath = path.join(os.tmpdir(), CACHE_DIRNAME, obj.config.name, obj.config.type === 'ftp' ? obj.realPath : path.relative(obj.config.remotePath, obj.realPath))
+		let filePath = path.join(os.tmpdir(), CACHE_DIRNAME, getConfigCacheDirectoryName(obj.config), obj.config.type === 'ftp' ? obj.realPath : path.relative(obj.config.remotePath, obj.realPath))
 
-		let schemePath = path.posix.join(obj.config.name, obj.config.type, obj.parentPath, obj.file.name)
+		let schemePath = path.posix.join(getConfigCacheDirectoryName(obj.config), obj.config.type, obj.parentPath, obj.file.name)
 		const uri = vscode.Uri.parse(`${URI_SCHEME}:/${schemePath}`);
 		let task: Task = {
 			config: obj.config,
@@ -807,12 +875,13 @@ export class DepNodeProvider implements vscode.TreeDataProvider<TreeItem>, vscod
 			}
 			addLogTask(task);
 
-			if (obj.config.type === 'ftp') {
+			if (obj.config.type === 'ftp' && isFTPClient(client)) {
 				// 获取远程文件的大小
 				const fileSize = await client.size(obj.realPath);
 
 				// 设置进度跟踪
-				client.trackProgress((info: any) => {
+				if (client.trackProgress) {
+					client.trackProgress((info: { name: string; type: string; bytes: number; bytesOverall: number }) => {
 					if (info.type == 'download') {
 						if (!fileSize) {
 							task.useTime = getUseTime(task.start)
@@ -829,26 +898,31 @@ export class DepNodeProvider implements vscode.TreeDataProvider<TreeItem>, vscod
 						updateTaskProgress();
 					}
 				});
+				}
 				await client.downloadTo(filePath, obj.realPath);
-				client.trackProgress()
-			} else {
+				if (client.trackProgress) {
+					client.trackProgress()
+				}
+			} else if (isSFTPClient(client)) {
 				let download = new Promise<void>((resolve, reject) => {
 					try {
-						client.fastGet(obj.realPath, filePath, {
-							step: async (transferred: number, chunk: any, total: number) => {
-								oConsole.log(`已传输: ${transferred}/${total} 字节`);
-								let progress = Math.min(parseFloat(((transferred / total) * 100).toFixed(2)), 100);
-								task.progress = progress
-								if (progress >= 100) {
-									obj.isNew = false
-									task.useTime = getUseTime(task.start)
-									updateTaskProgress(true);
-									resolve();
-								} else {
-									updateTaskProgress();
+						if (client.fastGet) {
+							client.fastGet(obj.realPath, filePath, {
+								step: async (transferred: number, chunk: number, total: number) => {
+									oConsole.log(`已传输: ${transferred}/${total} 字节`);
+									let progress = Math.min(parseFloat(((transferred / total) * 100).toFixed(2)), 100);
+									task.progress = progress
+									if (progress >= 100) {
+										obj.isNew = false
+										task.useTime = getUseTime(task.start)
+										updateTaskProgress(true);
+										resolve();
+									} else {
+										updateTaskProgress();
+									}
 								}
-							}
-						});
+							});
+						}
 					} catch (error) {
 						reject(error);
 					}
@@ -874,7 +948,7 @@ export class DepNodeProvider implements vscode.TreeDataProvider<TreeItem>, vscod
 	}
 
 	// 提取的错误提示函数
-	showErrorMessage(task: Task, obj: RepositoryFileNode, err: any) {
+	showErrorMessage(task: Task, obj: RepositoryFileNode, err: unknown) {
 		let msg = `[open][${obj.config.name}][${obj.config.type}][error] : ${obj.realPath} ${err?.toString()}`;
 		task.error = err?.toString()
 		updateTaskProgress(true);
@@ -902,8 +976,8 @@ export class DepNodeProvider implements vscode.TreeDataProvider<TreeItem>, vscod
 	}
 
 
-	async saveFile(name: string, content: string, localPath: string, remotePath: string) {
-		let obj = this.items.find(item => item.label == name)
+	async saveFile(configScope: string, content: string, localPath: string, remotePath: string) {
+		let obj = this.items.find(item => getConfigScopeKey(item.config) === configScope)
 		if (!obj) return
 
 		let { client, fileTransfer } = await this.getClient(obj.config)
@@ -927,7 +1001,7 @@ export class DepNodeProvider implements vscode.TreeDataProvider<TreeItem>, vscod
 			this.showLog(obj.config, 'save', 'success', newRemotePath)
 			await this.releaseClient(client, obj.config)
 
-			let saveObj = this.allNodes[task.config.name + "###" + newRemotePath]
+			let saveObj = this.allNodes.get(getConfigScopeKey(task.config) + "###" + newRemotePath)
 			if (saveObj && saveObj instanceof RepositoryFileNode && saveObj.file) {
 				saveObj.file.size = fileStat.size
 				saveObj.isNew = true
@@ -962,7 +1036,7 @@ export class DepNodeProvider implements vscode.TreeDataProvider<TreeItem>, vscod
 
 		try {
 			if (opType == 1) {
-				let filePath = path.join(os.tmpdir(), CACHE_DIRNAME, obj.config.name, remotePath, value)
+				let filePath = path.join(os.tmpdir(), CACHE_DIRNAME, getConfigCacheDirectoryName(obj.config), remotePath, value)
 				!fs.existsSync(path.dirname(filePath)) && fs.mkdirSync(path.dirname(filePath), { recursive: true })
 				fs.writeFileSync(filePath, ' ')
 				const task: Task = {
@@ -1034,7 +1108,7 @@ export class DepNodeProvider implements vscode.TreeDataProvider<TreeItem>, vscod
 	}
 
 	async downloadFile(obj: Dependency | RepositoryFileNode) {
-		let localPath = path.join(obj.config.downloadPath || this.rootPath, obj.config.type == 'ftp' ? obj.realPath : path.relative(obj.config.remotePath, obj.realPath))
+		let localPath = path.join(obj.config.downloadPath || obj.config.workspaceRoot || '', obj.config.type == 'ftp' ? obj.realPath : path.relative(obj.config.remotePath, obj.realPath))
 		await FileTransfer.addTask({
 			config: obj.config,
 			localPath: localPath,
@@ -1046,7 +1120,7 @@ export class DepNodeProvider implements vscode.TreeDataProvider<TreeItem>, vscod
 	}
 
 	async compareFile(obj: RepositoryFileNode) {
-		let localPath = path.join(obj.config.downloadPath || this.rootPath, obj.config.type == 'ftp' ? obj.realPath : path.relative(obj.config.remotePath, obj.realPath))
+		let localPath = path.join(obj.config.downloadPath || obj.config.workspaceRoot || '', obj.config.type == 'ftp' ? obj.realPath : path.relative(obj.config.remotePath, obj.realPath))
 		if (!fs.existsSync(localPath)) {
 			return vscode.window.showErrorMessage(`${l10n.t('Local file {0} does not exist', localPath)}`);
 		}
@@ -1091,10 +1165,10 @@ export class DepNodeProvider implements vscode.TreeDataProvider<TreeItem>, vscod
 		let { client, fileTransfer } = await this.getClient(obj.config)
 		if (!client) return
 		try {
-			if (obj.config.type == 'ftp') {
+			if (obj.config.type == 'ftp' && isFTPClient(client) && client.send) {
 				const command = `CHMOD ${value} ${obj.realPath}`;
 				await client.send(command);
-			} else {
+			} else if (isSFTPClient(client) && client.chmod) {
 				await client.chmod(obj.realPath, value);
 			}
 			this.showLog(obj.config, 'chmod', 'success', `${obj.realPath} ${value}`)
@@ -1144,7 +1218,7 @@ export class DepNodeProvider implements vscode.TreeDataProvider<TreeItem>, vscod
 	checkToClose(obj: RepositoryFileNode, delete_cache: boolean = true) {
 		const visibleEditors = vscode.workspace.textDocuments;
 		// 你想要关闭的文件路径
-		let fileToClose = path.posix.join('/', obj.config.name, obj.config.type, obj.realPath)
+		let fileToClose = path.posix.join('/', getConfigCacheDirectoryName(obj.config), obj.config.type, obj.realPath)
 
 		// 查找要关闭的编辑器
 		const editorsToClose = obj.file && obj.file.isDirectory
@@ -1158,7 +1232,7 @@ export class DepNodeProvider implements vscode.TreeDataProvider<TreeItem>, vscod
 			});
 		});
 
-		delete_cache && delete this.allNodes[obj.config.name + "###" + obj.realPath]
+		if (delete_cache) this.evictNodeSubtree(obj)
 	}
 
 	refreshCount() {
@@ -1167,8 +1241,9 @@ export class DepNodeProvider implements vscode.TreeDataProvider<TreeItem>, vscod
 		if (Array.isArray(this.items)) {
 			let arr = Array.from(this.items)
 			let num = 0
-			arr.map((v, index) => {
-				let cache_key = v.label + '###' + this.rootPath
+			const showWorkspaceName = getWorkspaceRoots().length > 1
+			arr.map((v) => {
+				let cache_key = v.config.name + '###' + v.config.workspaceRoot
 				// 从 workspaceState 中读取数据
 				let newGlobalData = workspaceState.get(cache_key)
 				let count = 0
@@ -1176,7 +1251,10 @@ export class DepNodeProvider implements vscode.TreeDataProvider<TreeItem>, vscod
 					count = Object.keys(newGlobalData).length
 					num += count
 				}
-				v.description = count ? `(${count}) ${v.config.host}` : `${v.config.host}`;
+				const baseDescription = showWorkspaceName
+					? `${path.basename(v.config.workspaceRoot || '')} · ${v.config.host}`
+					: `${v.config.host}`;
+				v.description = count ? `(${count}) ${baseDescription}` : baseDescription;
 				let tooltip = l10n.t('Server: {0}   Address: {1}   Not uploaded: {2}', String(v.label ?? ''), v.config.host, count);
 				v.tooltip = tooltip;
 			})
@@ -1193,8 +1271,8 @@ export class DepNodeProvider implements vscode.TreeDataProvider<TreeItem>, vscod
 		oConsole.log('清除缓存');
 		// 获取 workspaceState 对象
 		const workspaceState = this.context.workspaceState;
-		let cache_key = item.label + '###' + this.rootPath
-		await workspaceState.update(cache_key, "")
+		let cache_key = item.config.name + '###' + item.config.workspaceRoot
+		await clearWatchCache(workspaceState, cache_key)
 		// 刷新视图显示
 		myEvent.fire("update")
 	}
@@ -1202,7 +1280,7 @@ export class DepNodeProvider implements vscode.TreeDataProvider<TreeItem>, vscod
 	showLog(config: FileTransferConfigItem, type: string, status: string, msg: string = '') {
 		let time = dayjs().format('YYYY-MM-DD HH:mm:ss')
 		let txt = `[${time}][${config.name}][${config.type}][${type}][${status}]: ${msg}`;
-		addLogTask(txt);
+		addLogTask(txt, config);
 	}
 }
 

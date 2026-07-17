@@ -9,18 +9,20 @@ import async from 'async';
 import { l10n } from 'vscode';
 import * as vscode from "vscode"
 import { EventEmitter } from 'events';
-import { FileTransferConfigItem, Task, TargetTypes, proxyConfigType } from "./types/config";
-import { getRootPath, getAllowFiles, isUpRoot, formatFileSize, getUseTime, getPluginSetting, sleep, getNormalPath, isIgnore, oConsole, posixRelative } from './utils';
+import { FileTransferConfigItem, Task, TargetTypes, proxyConfigType, TaskTerminalState } from "./types/config";
+import { getRootPath, getAllowFiles, isUpRoot, formatFileSize, getUseTime, getPluginSetting, sleep, getNormalPath, oConsole, posixRelative, createPathIgnoreMatcher, getConfigScopeKey, PathIgnoreMatcher, normalizeTraversalConcurrency } from './utils';
 import { SocksClient } from "socks";
 import { SocksProxyType } from "socks/typings/common/constants";
 import { getContext } from "./config/globals";
 import { Mutex } from 'async-mutex';
-import { addLogTask, cleanLogTask, updateTaskProgress } from './output';
+import { addLogTask, updateTaskProgress } from './output';
 import { ClientConnectionError } from './types/connect';
 import { myEvent } from './events/myEvent';
 import { StatusBarUi } from './statusBar';
 import { getDecryptionCode } from "./CodeLensProvider";
 import { cloneTask } from "./task";
+import { FileTransferClient, FTPClientType, FTPProgressHandler, FTPRemoteFileInfo, isFTPClient, isSFTPClient, SFTPClientType } from "./types/client";
+import { clearWatchCache } from "./watchCache";
 
 EventEmitter.setMaxListeners(99999)
 
@@ -32,19 +34,77 @@ type FtpFileTimeStrategy = {
     useCwd: boolean;
 };
 
+type DownloadTraversalDirectory = {
+    remotePath: string;
+    localPath: string;
+};
+
+type DownloadTraversalEntry = {
+    name: string;
+    isDirectory: boolean;
+};
+
+class ConnectionLimiter {
+    private active = 0;
+    private waiters: Array<(release: () => void) => void> = [];
+
+    constructor(private limit: number) { }
+
+    setLimit(limit: number) {
+        this.limit = Math.max(1, limit);
+        this.dispatch();
+    }
+
+    async acquire(wait: boolean = true): Promise<(() => void) | undefined> {
+        if (this.active < this.limit) {
+            this.active++;
+            return this.createRelease();
+        }
+        if (!wait) return undefined;
+        return new Promise(resolve => this.waiters.push(resolve));
+    }
+
+    private createRelease() {
+        let released = false;
+        return () => {
+            if (released) return;
+            released = true;
+            this.active--;
+            this.dispatch();
+        };
+    }
+
+    private dispatch() {
+        while (this.active < this.limit && this.waiters.length) {
+            const resolve = this.waiters.shift();
+            if (!resolve) break;
+            this.active++;
+            resolve(this.createRelease());
+        }
+    }
+}
+
 // 文件传输类
 export default class FileTransfer extends EventEmitter {
     static instance: FileTransfer;
-    static ftpConnectionPools: { [key: string]: any[] } = {}; // ftp连接池
-    static sftpConnectionPools: { [key: string]: any[] } = {}; // sftp连接池
-    static queues: { [key: string]: async.QueueObject<any> } = {}; // 用于存储每个 configItem.name 的任务队列
+    static ftpConnectionPools: { [key: string]: FTPClientType[] } = {}; // ftp连接池
+    static sftpConnectionPools: { [key: string]: SFTPClientType[] } = {}; // sftp连接池
+    static queues: { [key: string]: async.QueueObject<Task> } = {}; // 用于存储每个 configItem.name 的任务队列
     static maxConnectionsMap: { [key: string]: number } = {}; // 存储每个 configItem.name 对应的并发数量
     static collectionOfTreeNodes: { [key: string]: string } = {}; // 存储需要刷新的树节点的集合
     static noUploadFiles: Set<string> = new Set<string>(); // 存储不上传的文件
     static concurrencyProbeInFlight: { [key: string]: Promise<void> | undefined } = {};
     static concurrencyProbeLastStartedAt: { [key: string]: number } = {};
     static concurrencyProbeCooldownMs = 2000;
+    static taskMaxRetries = 3;
+    static taskRetryDelayMs = 2000;
     static ftpFileTimeStrategyCache: { [key: string]: FtpFileTimeStrategy } = {};
+    static queueConfigs: { [key: string]: FileTransferConfigItem } = {};
+    static queueOwners: { [key: string]: FileTransfer } = {};
+    static queueTerminalStates: { [key: string]: TaskTerminalState | undefined } = {};
+    static finalizedQueues: Set<string> = new Set();
+    static connectionLimiters = new Map<string, ConnectionLimiter>();
+    static clientLeaseReleases = new WeakMap<object, () => void>();
 
     configItem: FileTransferConfigItem; // 配置项
     uploadTaskNumber: number; // 上传数量达到多少时开启并发
@@ -52,7 +112,7 @@ export default class FileTransfer extends EventEmitter {
     rootPath: string
     context: vscode.ExtensionContext;
     mutex: Mutex;  // 定义互斥锁
-    static timer: any = null; // 定时器
+    static timer: ReturnType<typeof setInterval> | null = null; // 定时器
     // 已创建的目录集合，用于判断是否已创建过该目录
     existCreateDir: { [key: string]: Set<string> } = {};
     existCreateDirPending: { [key: string]: Map<string, Promise<void>> } = {};
@@ -66,7 +126,9 @@ export default class FileTransfer extends EventEmitter {
         let uploadTaskNumber = syncConfig.get('uploadTaskNumber', 10)
         let uploadConcurrentLimit = syncConfig.get('uploadConcurrentLimit', 3)
         this.configItem = configItem;
-        this.rootPath = getRootPath();
+        this.rootPath = configItem.workspaceRoot || getRootPath();
+        this.configItem.workspaceRoot = this.rootPath;
+        const scopeKey = getConfigScopeKey(this.configItem);
         this.uploadTaskNumber = uploadTaskNumber;
         this.maxConnections = uploadConcurrentLimit;
         this.context = getContext();
@@ -74,55 +136,59 @@ export default class FileTransfer extends EventEmitter {
         this.mutex = new Mutex();  // 初始化锁
         // 确保共享实例
         FileTransfer.instance = this;
-        this.existCreateDir[configItem.name] = new Set();
-        this.existCreateDirPending[configItem.name] = new Map();
+        this.existCreateDir[scopeKey] = new Set();
+        this.existCreateDirPending[scopeKey] = new Map();
+        FileTransfer.queueConfigs[scopeKey] = this.configItem;
 
         // 初始化连接池
-        if (!FileTransfer.ftpConnectionPools[configItem.name]) {
-            FileTransfer.ftpConnectionPools[configItem.name] = [];
+        if (!FileTransfer.ftpConnectionPools[scopeKey]) {
+            FileTransfer.ftpConnectionPools[scopeKey] = [];
         }
-        if (!FileTransfer.sftpConnectionPools[configItem.name]) {
-            FileTransfer.sftpConnectionPools[configItem.name] = [];
+        if (!FileTransfer.sftpConnectionPools[scopeKey]) {
+            FileTransfer.sftpConnectionPools[scopeKey] = [];
         }
 
         FileTransfer.startCleanupTimer()
 
         // 初始化最大并发数
-        if (!FileTransfer.maxConnectionsMap[configItem.name]) {
-            FileTransfer.maxConnectionsMap[configItem.name] = 1; // 默认并发数
+        if (!FileTransfer.maxConnectionsMap[scopeKey]) {
+            FileTransfer.maxConnectionsMap[scopeKey] = 1; // 默认并发数
         }
 
         // 初始化队列
         // 如果当前 configItem.name 没有对应的队列，则创建新的队列
-        if (!FileTransfer.queues[configItem.name]) {
-            FileTransfer.queues[configItem.name] = async.queue(async (task: Task, callback) => {
-                let client: any;
-                const maxRetries = 3;  // 每个任务的最大重试次数
+        if (!FileTransfer.queues[scopeKey]) {
+            FileTransfer.queueOwners[scopeKey] = this;
+            FileTransfer.queues[scopeKey] = async.queue(async (task: Task, callback) => {
+                let client: FileTransferClient | undefined;
+                const maxRetries = FileTransfer.taskMaxRetries;  // 每个任务的最大重试次数
 
                 // 定义任务执行的函数
                 const executeTask = async (task: Task) => {
                     try {
                         client = await this.getClient(task.config);
-                        if (task.config.type == 'ftp') await client.cd("/")
+                        if (task.config.type === 'ftp' && isFTPClient(client)) await client.cd("/")
                         this.configItem = task.config;
                         this.addTaskLog(task)
 
                         // 如果是对比文件，且远程不存在该文件，则不执行对比
-                        if (task.compare && !task.isDirectory && task.operationType == 'download') {
+                        if (task.compare && !task.isDirectory && task.operationType === 'download') {
                             let msg = l10n.t('Remote file does not exist')
                             task.remotePath = getNormalPath(task.remotePath);
 
                             let res = true
-                            if (task.config.type == 'ftp') {
-                                res = await this.existFTPFile(client, task.remotePath)
-                            } else {
-                                res = await client.exists(task.remotePath)
+                            if (task.config.type === 'ftp') {
+                                res = await this.existFTPFile(client as FTPClientType, task.remotePath)
+                            } else if (isSFTPClient(client)) {
+                                res = Boolean(await client.exists(task.remotePath))
                             }
                             if (!res) {
                                 task.error = msg
+                                FileTransfer.queueTerminalStates[getConfigScopeKey(task.config)] = 'failed';
                                 let msg2 = `[compare][${task.config.name}][${task.config.type}][error]：${task.remotePath} ${msg}`;
                                 vscode.window.showErrorMessage(msg2);
                                 await this.releaseClient(client, task.config);
+                                client = undefined;
                                 updateTaskProgress();
                                 callback && callback();  // 任务完成，调用回调
                                 return
@@ -136,10 +202,8 @@ export default class FileTransfer extends EventEmitter {
                                 const normalizedRemotePath = getNormalPath(task.remotePath);
                                 if (await this.shouldSkipUpload(client, task, normalizedRemotePath)) {
                                     await this.releaseClient(client, task.config);
+                                    client = undefined;
                                     this.addMaxConcurrency(task.config);
-                                    if (!FileTransfer.queues[task.config.name].length() && FileTransfer.queues[task.config.name].running() === 1) {
-                                        this.allTaskCompleted(task.config)
-                                    }
                                     callback && callback();
                                     return;
                                 }
@@ -166,12 +230,13 @@ export default class FileTransfer extends EventEmitter {
 
                         // 释放连接
                         await this.releaseClient(client, task.config);
+                        client = undefined;
                         task.error = ''
                         updateTaskProgress();
 
                         // 视图上传需要刷新的视图菜单树节点
                         if (task.operationType !== 'download') {
-                            const key = `${task.config.name}###${task.remotePath}`;
+                            const key = `${getConfigScopeKey(task.config)}###${task.remotePath}`;
                             myEvent.fire({
                                 nodePath: key,
                                 task: task,
@@ -188,24 +253,20 @@ export default class FileTransfer extends EventEmitter {
                         // 动态增加并发数
                         this.addMaxConcurrency(task.config)
 
-                        // 所有任务完成，清理缓存
-                        if (!FileTransfer.queues[task.config.name].length() && FileTransfer.queues[task.config.name].running() === 1) {
-                            this.allTaskCompleted(task.config)
-                        }
-
                         callback && callback();  // 任务完成，调用回调
                     } catch (err) {
                         // 释放连接
-                        await this.releaseClient(client, task.config);
+                        if (client) {
+                            await this.releaseClient(client, task.config);
+                            client = undefined;
+                        }
 
                         let msg = '[error]'
                         if (err instanceof ClientConnectionError) {
-                            if (err.message.indexOf("many connections") != -1) {
-                                task.error = `${err.message}`
-                                updateTaskProgress();
-                                await FileTransfer.changeAsyncStatus(task.config.name, 'stop')
-                            }
-                            callback && callback();  // 任务失败，调用回调
+                            task.error = `${err.message}`
+                            updateTaskProgress();
+                            await FileTransfer.changeAsyncStatus(task.config, 'stop', 'failed')
+                            callback && callback();  // 任务失敗，呼叫回調
                         } else {
                             task.retries ? task.retries++ : task.retries = 1;  // 增加重试次数
                             // console.error(`Error during ${task.operationType} of ${task.localPath} to ${task.remotePath}:`, err);
@@ -214,7 +275,7 @@ export default class FileTransfer extends EventEmitter {
                                 msg = `[${l10n.t('Retry')} (${task.retries}/${maxRetries})] ${err}`
                                 task.error = `${msg}`
                                 updateTaskProgress();
-                                await sleep(2000);
+                                await sleep(FileTransfer.taskRetryDelayMs);
                                 await executeTask(task);  // 递归调用以进行重试
                             } else {
                                 oConsole.error(`Task failed after ${maxRetries} retries.`);
@@ -222,8 +283,7 @@ export default class FileTransfer extends EventEmitter {
                                 updateTaskProgress();
 
                                 // 退出任务
-                                await FileTransfer.changeAsyncStatus(task.config.name, 'stop')
-
+                                await FileTransfer.changeAsyncStatus(task.config, 'stop', 'failed')
 
                                 callback && callback();  // 任务失败，调用回调
                             }
@@ -233,40 +293,61 @@ export default class FileTransfer extends EventEmitter {
 
                 // 执行任务
                 await executeTask(task);
-            }, FileTransfer.maxConnectionsMap[configItem.name]);
+            }, FileTransfer.maxConnectionsMap[scopeKey]);
 
-
-            // 所有任务完成
-            FileTransfer.queues[configItem.name].drain(() => {
-                oConsole.log(`${[configItem.name]} 所有任务已完成`);
-                // this.allTaskCompleted(configItem)
+            // 所有任務完成時統一進行 config-level finalize。
+            FileTransfer.queues[scopeKey].drain(() => {
+                const terminalState = FileTransfer.queueTerminalStates[scopeKey] || 'completed';
+                const latestConfig = FileTransfer.queueConfigs[scopeKey] || configItem;
+                void this.finalizeQueue(latestConfig, terminalState);
             });
 
         }
     }
 
-    allTaskCompleted(configItem: FileTransferConfigItem) {
-        this.existCreateDir[configItem.name].clear();
-        setTimeout(() => {
-            StatusBarUi.working(`${[configItem.name]} ${l10n.t('All tasks completed')}`);
-            configItem.watch && this.clearCache(configItem)
+    async finalizeQueue(configItem: FileTransferConfigItem, terminalState: TaskTerminalState) {
+        const scopeKey = getConfigScopeKey(configItem);
+        if (FileTransfer.finalizedQueues.has(scopeKey)) return;
+        FileTransfer.finalizedQueues.add(scopeKey);
+        FileTransfer.queueTerminalStates[scopeKey] = terminalState;
+
+        let cleanupError: unknown;
+        try {
+            this.existCreateDir[scopeKey]?.clear();
+            this.existCreateDirPending[scopeKey]?.clear();
+            if (configItem.watch) {
+                await this.clearCache(configItem);
+            }
+        } catch (err) {
+            cleanupError = err;
+        } finally {
+            const stateText = terminalState === 'completed'
+                ? l10n.t('All tasks completed')
+                : terminalState;
+            StatusBarUi.working(`${[configItem.name]} ${stateText}`);
             myEvent.fire({
                 name: configItem.name,
+                workspaceRoot: configItem.workspaceRoot,
                 status: 'complete_sync',
+                terminalState,
                 type: 'refreshSyncStatus',
-            })
-        }, 1500);
-        setTimeout(() => {
-            let res = this.checkAllTaskCompleted()
-            res && StatusBarUi.working(l10n.t('All tasks completed'));
-            res && cleanLogTask()
-        }, 2500);
+            });
+
+            if (cleanupError) {
+                oConsole.error(`[${configItem.name}] queue cleanup failed: ${cleanupError}`);
+            }
+
+        }
+    }
+
+    allTaskCompleted(configItem: FileTransferConfigItem) {
+        return this.finalizeQueue(configItem, 'completed');
     }
 
     checkAllTaskCompleted() {
         let flag = true
-        for (const [k, v] of Object.entries(FileTransfer.queues)) {
-            if (v.length() !== 0) {
+        for (const [, queue] of Object.entries(FileTransfer.queues)) {
+            if (queue.length() !== 0 || queue.running() !== 0) {
                 flag = false;
             }
         }
@@ -301,13 +382,21 @@ export default class FileTransfer extends EventEmitter {
     }
 
     // 清理连接池，判断连接是否可用，再移除
-    static async cleanupConnectionPool(pool: any[], type: TargetTypes, maxIdle: number = Infinity): Promise<void> {
+    static async cleanupConnectionPool(
+        pool: FTPClientType[] | SFTPClientType[],
+        type: TargetTypes,
+        maxIdle: number = Infinity
+    ): Promise<void> {
         // 先移除超出闲置上限的多余连线（从尾端开始移除最旧的）
         while (pool.length > maxIdle) {
             const excess = pool.shift();
             if (excess) {
                 try {
-                    await (type === 'ftp' ? excess.close() : excess.end());
+                    if (type === TargetTypes.ftp) {
+                        (excess as FTPClientType).close();
+                    } else {
+                        await (excess as SFTPClientType).end();
+                    }
                 } catch { /* connection already dead, safe to ignore */ }
             }
         }
@@ -316,23 +405,44 @@ export default class FileTransfer extends EventEmitter {
             const client = pool[i];
             try {
                 // 检查 FTP 或 SFTP 连接是否仍然活跃
-                await (type === 'ftp' ? client.pwd() : client.cwd());
+                await (type === TargetTypes.ftp ? (client as FTPClientType).pwd() : (client as SFTPClientType).cwd());
                 oConsole.log(`Connection is still active, keeping in pool.`);
             } catch (err) {
                 // 如果检测失败，说明连接不可用，移除连接
                 oConsole.log(`Connection is not active, cleaning up ${type} connection.`);
                 pool.splice(i, 1);
                 try {
-                    await (type === 'ftp' ? client.close() : client.end());
+                    if (type === TargetTypes.ftp) {
+                        (client as FTPClientType).close();
+                    } else {
+                        await (client as SFTPClientType).end();
+                    }
                 } catch { /* connection already closed or broken, safe to ignore */ }
             }
         }
     }
 
     // 获取连接
-    async getClient(config: FileTransferConfigItem, showErr: boolean = false): Promise<any> {
+    async getClient(config: FileTransferConfigItem, showErr?: boolean, waitForLease?: true): Promise<FileTransferClient>;
+    async getClient(config: FileTransferConfigItem, showErr: boolean, waitForLease: false): Promise<FileTransferClient | undefined>;
+    async getClient(
+        config: FileTransferConfigItem,
+        showErr: boolean = false,
+        waitForLease: boolean = true
+    ): Promise<FileTransferClient | undefined> {
         const pool = config.type === 'ftp' ? FileTransfer.ftpConnectionPools : FileTransfer.sftpConnectionPools;
-        let client = pool[config.name].pop();
+        const scopeKey = getConfigScopeKey(config);
+        let limiter = FileTransfer.connectionLimiters.get(scopeKey);
+        if (!limiter) {
+            limiter = new ConnectionLimiter(this.maxConnections);
+            FileTransfer.connectionLimiters.set(scopeKey, limiter);
+        } else {
+            limiter.setLimit(this.maxConnections);
+        }
+        const releaseLease = await limiter.acquire(waitForLease);
+        if (!releaseLease) return undefined;
+        const scopedPool = pool[scopeKey] || (pool[scopeKey] = []);
+        let client: FileTransferClient | undefined = scopedPool.pop();
 
         if (!client) {
             try {
@@ -363,13 +473,15 @@ export default class FileTransfer extends EventEmitter {
                             ? (client = new ftp.Client({
                                 useInitialHost: true,
                                 buildSocket: () => proxySocket.create(proxyConfig.proxyHost, proxyConfig.proxyPort),
-                            }))
-                            : (configClone.sock = socket, client = new SftpClient());
+                            }) as FTPClientType)
+                            : (configClone.sock = socket, client = new SftpClient() as SFTPClientType);
                     } catch (err) {
                         throw new Error(l10n.t('Proxy connection failed, please check configuration:') + err?.toString());
                     }
                 } else {
-                    client = configClone.type === 'ftp' ? new ftp.Client() : new SftpClient();
+                    client = configClone.type === 'ftp'
+                        ? new ftp.Client() as FTPClientType
+                        : new SftpClient() as SFTPClientType;
                 }
 
                 if (configClone.secretKeyPath && fs.existsSync(configClone.secretKeyPath)) {
@@ -393,6 +505,9 @@ export default class FileTransfer extends EventEmitter {
                 }
 
                 if (configClone.type === 'ftp') {
+                    if (!isFTPClient(client)) {
+                        throw new Error('FTP client initialization failed');
+                    }
                     // 设置 FTP 用户名，并连接
                     configClone.user = configClone.username;
                     // 匹配IPv4地址的正则表达式
@@ -403,12 +518,20 @@ export default class FileTransfer extends EventEmitter {
                     // client.ftp.verbose = true;
                 }
 
-                await (configClone.type === 'ftp' ? client.access(configClone) : client.connect(configClone));
+                if (configClone.type === 'ftp') {
+                    await (client as FTPClientType).access(configClone);
+                } else {
+                    await (client as SFTPClientType).connect(configClone);
+                }
             } catch (err) {
                 // 清理连接防止内存泄漏
                 if (client) {
                     try {
-                        await (config.type === 'ftp' ? client.close() : client.end());
+                        if (config.type === 'ftp') {
+                            (client as FTPClientType).close();
+                        } else {
+                            await (client as SFTPClientType).end();
+                        }
                     } catch { /* already closed or broken, safe to ignore */ }
                 }
 
@@ -417,45 +540,73 @@ export default class FileTransfer extends EventEmitter {
                     vscode.window.showErrorMessage(`[${config.name}][${config.type}][error]: ${err?.toString()}`);
                 }
 
+                releaseLease();
                 throw new ClientConnectionError(`Failed to connect: ${err}`);
             }
         }
 
+        FileTransfer.clientLeaseReleases.set(client as object, releaseLease);
         return client;
     }
 
     // 释放连接回连接池
-    async releaseClient(client: any, config: FileTransferConfigItem, errorOccurred = false) {
-        if (!client || errorOccurred) return;
+    async releaseClient(client: FileTransferClient, config: FileTransferConfigItem, errorOccurred = false) {
+        if (!client) return;
+        const clientKey = client as object;
+        const releaseLease = () => {
+            const release = FileTransfer.clientLeaseReleases.get(clientKey);
+            if (!release) return;
+            FileTransfer.clientLeaseReleases.delete(clientKey);
+            release();
+        };
+        if (errorOccurred) {
+            releaseLease();
+            return;
+        }
 
         try {
             // 检查连接是否可用
             if (config.type === 'ftp') {
-                await client.pwd();
+                await (client as FTPClientType).pwd();
             } else {
-                await client.cwd();
+                await (client as SFTPClientType).cwd();
             }
 
             // 检查连接池是否已达闲置上限，超出则直接关闭而非放回
+            const scopeKey = getConfigScopeKey(config);
             const pool = config.type === 'ftp'
-                ? FileTransfer.ftpConnectionPools[config.name]
-                : FileTransfer.sftpConnectionPools[config.name];
+                ? FileTransfer.ftpConnectionPools[scopeKey]
+                : FileTransfer.sftpConnectionPools[scopeKey];
 
             if (pool.length >= this.maxConnections) {
                 oConsole.log(`Pool for ${config.name} is full (${pool.length}/${this.maxConnections}), closing connection instead of returning to pool.`);
                 try {
-                    await (config.type === 'ftp' ? client.close() : client.end());
+                    if (config.type === 'ftp') {
+                        (client as FTPClientType).close();
+                    } else {
+                        await (client as SFTPClientType).end();
+                    }
                 } catch { /* already closed, safe to ignore */ }
+                releaseLease();
                 return;
             }
 
-            pool.push(client);
+            if (config.type === 'ftp') {
+                FileTransfer.ftpConnectionPools[scopeKey].push(client as FTPClientType);
+            } else {
+                FileTransfer.sftpConnectionPools[scopeKey].push(client as SFTPClientType);
+            }
         } catch (err) {
             oConsole.log('Connection check failed, removing connection:', err);
             try {
-                await (config.type === 'ftp' ? client.close() : client.end());
+                if (config.type === 'ftp') {
+                    (client as FTPClientType).close();
+                } else {
+                    await (client as SFTPClientType).end();
+                }
             } catch { /* connection already dead, safe to ignore */ }
         }
+        releaseLease();
     }
 
 
@@ -463,7 +614,7 @@ export default class FileTransfer extends EventEmitter {
     /**
      * 檢查遠端檔案大小和修改時間是否與本地相同，相同則跳過上傳
      */
-    private async shouldSkipUpload(client: any, task: Task, remotePath: string): Promise<boolean> {
+    private async shouldSkipUpload(client: FileTransferClient, task: Task, remotePath: string): Promise<boolean> {
         const { config } = task;
         if (!config.skipIfSame) return false;
         if (task.isDirectory || !task.localPath || !fs.existsSync(task.localPath)) return false;
@@ -480,20 +631,22 @@ export default class FileTransfer extends EventEmitter {
             let remoteMtime: number | null = null;
 
             if (config.type === 'ftp') {
+                const ftpClient = client as FTPClientType;
                 // FTP: get size and mtime separately
                 try {
-                    remoteSize = await client.size(remotePath);
+                    remoteSize = await ftpClient.size(remotePath);
                 } catch { remoteSize = null; }
                 try {
-                    const ftpDate = await client.lastMod(remotePath);
+                    const ftpDate = await ftpClient.lastMod(remotePath);
                     if (ftpDate instanceof Date) {
                         remoteMtime = Math.floor(ftpDate.getTime() / 1000);
                     }
                 } catch { remoteMtime = null; }
-            } else if (client.stat) {
+            } else if (isSFTPClient(client)) {
+                const sftpClient = client;
                 // SFTP/SSH: stat returns both
                 try {
-                    const stat = await client.stat(remotePath);
+                    const stat = await sftpClient.stat(remotePath);
                     if (stat) {
                         remoteSize = stat.size ?? null;
                         if (stat.modifyTime) {
@@ -518,7 +671,7 @@ export default class FileTransfer extends EventEmitter {
 
             if (shouldSkip) {
                 const time = dayjs().format('YYYY-MM-DD HH:mm:ss');
-                addLogTask(`[${time}][${config.name}][${config.type}][skipUpload]: ${remotePath} (size=${localSize}, mtime=${localMtime}, mode=${compareMode})`);
+                addLogTask(`[${time}][${config.name}][${config.type}][skipUpload]: ${remotePath} (size=${localSize}, mtime=${localMtime}, mode=${compareMode})`, config);
                 return true;
             }
         } catch {
@@ -527,7 +680,7 @@ export default class FileTransfer extends EventEmitter {
         return false;
     }
 
-    async uploadFile(client: any, task: Task): Promise<void> {
+    async uploadFile(client: FileTransferClient, task: Task): Promise<void> {
         let { localPath, remotePath, config, useZip, isDirectory } = task;
         let remoteDirPath = path.dirname(remotePath);
         // 检查文件夹是否存在
@@ -541,6 +694,7 @@ export default class FileTransfer extends EventEmitter {
 
         // 开始传输
         if (config.type === "ftp") {
+            const ftpClient = client as FTPClientType;
             if (task.isDirectory) {
                 await this.uploadFolder(task)
             } else {
@@ -554,8 +708,8 @@ export default class FileTransfer extends EventEmitter {
                 }
 
                 try {
-                    client.trackProgress((info: any) => {
-                        if (info.type == 'upload') {
+                    const onProgress: FTPProgressHandler = (info) => {
+                        if (info.type === 'upload') {
                             if (!task.fileSize) {
                                 task.useTime = getUseTime(task.start)
                                 task.progress = 100
@@ -569,11 +723,12 @@ export default class FileTransfer extends EventEmitter {
                             }
                             updateTaskProgress();
                         }
-                    });
+                    };
+                    ftpClient.trackProgress(onProgress);
                     remotePath = getNormalPath(remotePath)
-                    await client.uploadFrom(uploadPath, remotePath)
-                    client.trackProgress()
-                    await this.syncRemoteFileTime(client, task, remotePath)
+                    await ftpClient.uploadFrom(uploadPath, remotePath)
+                    ftpClient.trackProgress()
+                    await this.syncRemoteFileTime(ftpClient, task, remotePath)
                 } finally {
                     // 清理暂存档
                     if (tempFile && fs.existsSync(tempFile)) {
@@ -582,14 +737,15 @@ export default class FileTransfer extends EventEmitter {
                 }
             }
         } else {
+            const sftpClient = client as SFTPClientType;
             if (isDirectory) {
                 await this.uploadFolder(task)
             } else {
                 remotePath = getNormalPath(remotePath)
-                await client.fastPut(task.localPath, remotePath, {
+                await sftpClient.fastPut(task.localPath, remotePath, {
                     flags: "r+",
                     autoClose: true,
-                    step: async (transferred: number, chunk: any, total: number) => {
+                    step: (transferred: number, _chunk: number, total: number) => {
                         // oConsole.log(`已传输 ${transferred}/${total} 字节`)
                         task.progress = Math.min(parseFloat(((transferred / total) * 100).toFixed(2)), 100);
                         // task.localPath.includes(this.rootPath) && updateUploadStatus(true, `${[task.operationType]}: ${path.relative(this.rootPath, task.localPath)} ${task.progress}%`)
@@ -599,7 +755,7 @@ export default class FileTransfer extends EventEmitter {
                         updateTaskProgress();
                     }
                 })
-                await this.syncRemoteFileTime(client, task, remotePath)
+                await this.syncRemoteFileTime(sftpClient, task, remotePath)
             }
         }
 
@@ -607,7 +763,7 @@ export default class FileTransfer extends EventEmitter {
         if (useZip) {
             // 是否远程解压
             if (config.type == 'ssh' && task.config.remote_unpacked) {
-                await this.UnzipFile(client, task.config, localPath, remotePath)
+                await this.UnzipFile(client as SFTPClientType, task.config, localPath, remotePath)
             }
             //是否删除远程压缩文件
             if (task.config.delete_remote_compress) {
@@ -647,7 +803,7 @@ export default class FileTransfer extends EventEmitter {
     private logSyncFileTime(task: Task, message: string) {
         const { config } = task;
         const time = dayjs().format('YYYY-MM-DD HH:mm:ss');
-        addLogTask(`[${time}][${config.name}][${config.type}][syncFileTime]: ${message}`);
+        addLogTask(`[${time}][${config.name}][${config.type}][syncFileTime]: ${message}`, config);
     }
 
     private getFtpFileTimeStrategyCacheKey(config: FileTransferConfigItem) {
@@ -672,13 +828,11 @@ export default class FileTransfer extends EventEmitter {
         return paths[mode];
     }
 
-    private async applyRemoteFileTime(client: any, task: Task, remotePath: string, targetTime: Date) {
+    private async applyRemoteFileTime(client: FileTransferClient, task: Task, remotePath: string, targetTime: Date) {
         const { config } = task;
 
         if (config.type === 'ftp') {
-            if (!client.send) {
-                return;
-            }
+            const ftpClient = client as FTPClientType;
 
             const quotedPath = `"${remotePath.replace(/"/g, '""')}"`;
             const mfmtTime = this.formatFtpMfmtTime(targetTime);
@@ -697,7 +851,7 @@ export default class FileTransfer extends EventEmitter {
             const cacheKey = this.getFtpFileTimeStrategyCacheKey(config);
             const cachedStrategy = FileTransfer.ftpFileTimeStrategyCache[cacheKey];
 
-            let lastErr: any;
+            let lastErr: unknown;
             const errorLogs: string[] = [];
 
             if (cachedStrategy) {
@@ -705,20 +859,17 @@ export default class FileTransfer extends EventEmitter {
                 const command = this.buildFtpFileTimeCommands(targetPath, mfmtTime, utimeTime)[cachedStrategy.commandIndex];
                 try {
                     if (cachedStrategy.useCwd) {
-                        if (!client.cd || !client.pwd) {
-                            throw new Error('cached ftp file-time strategy requires cwd support');
-                        }
-                        const originalDir = await client.pwd();
+                        const originalDir = await ftpClient.pwd();
                         try {
-                            await client.cd(dirName);
-                            await client.send(command);
+                            await ftpClient.cd(dirName);
+                            await ftpClient.send(command);
                             return;
                         } finally {
-                            await client.cd(originalDir || '/');
+                            await ftpClient.cd(originalDir || '/');
                         }
                     }
 
-                    await client.send(command);
+                    await ftpClient.send(command);
                     return;
                 } catch (err) {
                     delete FileTransfer.ftpFileTimeStrategyCache[cacheKey];
@@ -731,7 +882,7 @@ export default class FileTransfer extends EventEmitter {
             const tryCommand = async (strategy: FtpFileTimeStrategy) => {
                 const targetPath = this.getFtpFileTimeTarget(strategy.targetMode, targetPaths);
                 const command = this.buildFtpFileTimeCommands(targetPath, mfmtTime, utimeTime)[strategy.commandIndex];
-                await client.send(command);
+                await ftpClient.send(command);
                 FileTransfer.ftpFileTimeStrategyCache[cacheKey] = strategy;
             };
 
@@ -750,10 +901,10 @@ export default class FileTransfer extends EventEmitter {
                 }
             }
 
-            if (client.cd && client.pwd) {
-                const originalDir = await client.pwd();
+            {
+                const originalDir = await ftpClient.pwd();
                 try {
-                    await client.cd(dirName);
+                    await ftpClient.cd(dirName);
                     const cwdTargetModes: FtpFileTimeTargetMode[] = ['quotedFileName', 'fileName'];
                     for (const targetMode of cwdTargetModes) {
                         const targetPath = this.getFtpFileTimeTarget(targetMode, targetPaths);
@@ -769,7 +920,7 @@ export default class FileTransfer extends EventEmitter {
                         }
                     }
                 } finally {
-                    await client.cd(originalDir || '/');
+                    await ftpClient.cd(originalDir || '/');
                 }
             }
 
@@ -781,12 +932,13 @@ export default class FileTransfer extends EventEmitter {
 
         // SFTP: try underlying sftp.utimes first, then exec touch
         if (config.type === 'sftp') {
+            const sftpClient = client as SFTPClientType;
             // Try underlying ssh2 SFTP utimes (client.sftp is the raw SFTP handle)
-            if (client.sftp && client.sftp.utimes) {
+            if (sftpClient.sftp?.utimes) {
                 try {
                     const epochSeconds = Math.floor(targetTime.getTime() / 1000);
                     await new Promise<void>((resolve, reject) => {
-                        client.sftp.utimes(remotePath, epochSeconds, epochSeconds, (err: any) => {
+                        sftpClient.sftp?.utimes(remotePath, epochSeconds, epochSeconds, (err: Error | null | undefined) => {
                             if (err) reject(err);
                             else resolve();
                         });
@@ -797,47 +949,43 @@ export default class FileTransfer extends EventEmitter {
                 }
             }
             // Fallback: exec touch via SSH channel
-            if (client.exec) {
-                const epochSeconds = Math.floor(targetTime.getTime() / 1000);
-                const escapedPath = remotePath.replace(/'/g, `'"'"'`);
-                await client.exec(`touch -m -d @${epochSeconds} '${escapedPath}'`);
-                return;
-            }
+            const epochSeconds = Math.floor(targetTime.getTime() / 1000);
+            const escapedPath = remotePath.replace(/'/g, `'"'"'`);
+            await sftpClient.exec(`touch -m -d @${epochSeconds} '${escapedPath}'`);
             return;
         }
 
         // SSH type
-        if (config.type === 'ssh' && client.exec) {
+        if (config.type === 'ssh') {
+            const sftpClient = client as SFTPClientType;
             const epochSeconds = Math.floor(targetTime.getTime() / 1000);
             const escapedPath = remotePath.replace(/'/g, `'"'"'`);
-            await client.exec(`touch -m -d @${epochSeconds} '${escapedPath}'`);
+            await sftpClient.exec(`touch -m -d @${epochSeconds} '${escapedPath}'`);
         }
     }
 
-    private async getRemoteFileTime(client: any, task: Task, remotePath: string): Promise<Date | null> {
+    private async getRemoteFileTime(client: FileTransferClient, task: Task, remotePath: string): Promise<Date | null> {
         const { config } = task;
 
         try {
             if (config.type === 'ftp') {
-                if (client.lastMod) {
-                    const ftpDate = await client.lastMod(remotePath);
-                    if (ftpDate instanceof Date) {
-                        return this.normalizeToSecond(ftpDate);
-                    }
+                const ftpClient = client as FTPClientType;
+                const ftpDate = await ftpClient.lastMod(remotePath);
+                if (ftpDate instanceof Date) {
+                    return this.normalizeToSecond(ftpDate);
                 }
                 return null;
             }
 
-            if (client.stat) {
-                const stat = await client.stat(remotePath);
-                if (stat?.modifyTime) {
-                    return this.normalizeToSecond(new Date(stat.modifyTime));
-                }
+            const sftpClient = client as SFTPClientType;
+            const stat = await sftpClient.stat(remotePath);
+            if (stat?.modifyTime) {
+                return this.normalizeToSecond(new Date(stat.modifyTime));
             }
 
-            if ((config.type === 'ssh' || config.type === 'sftp') && client.exec) {
+            if (config.type === 'ssh' || config.type === 'sftp') {
                 const escapedPath = remotePath.replace(/'/g, `'"'"'`);
-                const result = await client.exec(`stat -c %Y '${escapedPath}'`);
+                const result = await sftpClient.exec(`stat -c %Y '${escapedPath}'`);
                 const epoch = Number((result?.stdout || '').toString().trim());
                 if (!Number.isNaN(epoch) && epoch > 0) {
                     return new Date(epoch * 1000);
@@ -850,7 +998,7 @@ export default class FileTransfer extends EventEmitter {
         return null;
     }
 
-    async syncRemoteFileTime(client: any, task: Task, remotePath: string) {
+    async syncRemoteFileTime(client: FileTransferClient, task: Task, remotePath: string) {
         const { config, localPath } = task;
         if (!config.syncFileTime || task.isDirectory || !localPath || !fs.existsSync(localPath)) {
             return;
@@ -898,33 +1046,33 @@ export default class FileTransfer extends EventEmitter {
             view
         )
         if (files && files.length) {
-            for (let vv of files) {
-                let remoteFile = path.posix.join("/", remotePath, path.relative(localPath, vv))
-                const newTask = cloneTask(task, {
+            const tasks = files.map(vv => {
+                let remoteFile = path.posix.join("/", remotePath, posixRelative(localPath, vv))
+                return cloneTask(task, {
                     operationType: "upload",
                     localPath: vv,
                     view,
                     isDirectory: false,
                     remotePath: remoteFile
                 });
-                await FileTransfer.addTask(newTask)
-            }
+            })
+            await FileTransfer.addTasks(tasks)
         }
     }
 
 
     // 解压远程文件
-    UnzipFile(client: any, config: FileTransferConfigItem, localPath: string, remotePath: string) {
+    UnzipFile(client: SFTPClientType, config: FileTransferConfigItem, localPath: string, remotePath: string) {
         return new Promise<void>((resolve, reject) => {
             client
                 .exec(`unzip -o ${remotePath} -d ${config.remotePath}`)
-                .then(async (v: any) => {
+                .then(async (v) => {
                     if (!v.code) {
                         resolve()
                     } else {
                         reject(`${l10n.t('Decompression failed')}: ${v}`)
                     }
-                }).catch((err: any) => {
+                }).catch((err: unknown) => {
                     oConsole.error(`解压失败: ${remotePath}`, err);
                     reject(`${l10n.t('Decompression failed')}: ${remotePath}`)
                 });
@@ -932,18 +1080,121 @@ export default class FileTransfer extends EventEmitter {
     }
 
 
+    private getDownloadIgnoreMatcher(config: FileTransferConfigItem): PathIgnoreMatcher {
+        const rules = Array.isArray(config.downloadExcludePath)
+            ? config.downloadExcludePath
+            : config.downloadExcludePath?.split(",").map(rule => rule.trim()).filter(Boolean) || [];
+        const remoteRoot = config.type === "ftp" ? "/" : config.remotePath;
+        return createPathIgnoreMatcher(rules, getNormalPath(remoteRoot));
+    }
+
+    private async listDownloadDirectory(
+        client: FileTransferClient,
+        config: FileTransferConfigItem,
+        remotePath: string
+    ): Promise<DownloadTraversalEntry[]> {
+        if (config.type === 'ftp') {
+            const list = await (client as FTPClientType).list(remotePath);
+            return list.map(item => ({ name: item.name, isDirectory: item.isDirectory }));
+        }
+        const list = await (client as SFTPClientType).list(remotePath);
+        return list.map(item => ({ name: item.name, isDirectory: item.type === 'd' }));
+    }
+
+    private async downloadFilesWithBoundedTraversal(
+        initialClient: FileTransferClient,
+        remotePath: string,
+        localPath: string,
+        task: Task,
+        ignoreMatcher: PathIgnoreMatcher
+    ) {
+        const requestedConcurrency = normalizeTraversalConcurrency(task.config.downloadTraversalConcurrency, 2);
+        const concurrency = Math.min(requestedConcurrency, Math.max(1, this.maxConnections));
+        const clients: FileTransferClient[] = [initialClient];
+
+        try {
+            for (let i = 1; i < concurrency; i++) {
+                const client = await this.getClient(task.config, false, false);
+                if (!client) break;
+                clients.push(client);
+                if (task.config.type === 'ftp') await (client as FTPClientType).cd('/');
+            }
+
+            const directoryEntries = new Map<string, DownloadTraversalEntry[]>();
+            let frontier: DownloadTraversalDirectory[] = [{ remotePath, localPath }];
+
+            while (frontier.length) {
+                const nextFrontier: DownloadTraversalDirectory[] = [];
+                for (let offset = 0; offset < frontier.length; offset += clients.length) {
+                    const batch = frontier.slice(offset, offset + clients.length);
+                    const listedDirectories = await Promise.all(batch.map((directory, index) =>
+                        this.listDownloadDirectory(clients[index], task.config, directory.remotePath)
+                    ));
+
+                    for (let index = 0; index < batch.length; index++) {
+                        const directory = batch[index];
+                        const entries = listedDirectories[index].filter(entry => {
+                            const childPath = path.posix.join(directory.remotePath, entry.name);
+                            return entry.isDirectory
+                                ? ignoreMatcher.shouldTraverse(childPath)
+                                : !ignoreMatcher.isIgnored(childPath);
+                        });
+                        directoryEntries.set(directory.remotePath, entries);
+                        for (const entry of entries) {
+                            if (!entry.isDirectory) continue;
+                            nextFrontier.push({
+                                remotePath: path.posix.join(directory.remotePath, entry.name),
+                                localPath: path.join(directory.localPath, entry.name)
+                            });
+                        }
+                    }
+                }
+                frontier = nextFrontier;
+            }
+
+            const downloadTasks: Task[] = [];
+            const appendDirectoryTasks = (directory: DownloadTraversalDirectory) => {
+                for (const entry of directoryEntries.get(directory.remotePath) || []) {
+                    const childRemotePath = path.posix.join(directory.remotePath, entry.name);
+                    const childLocalPath = path.join(directory.localPath, entry.name);
+                    if (entry.isDirectory) {
+                        appendDirectoryTasks({ remotePath: childRemotePath, localPath: childLocalPath });
+                    } else {
+                        downloadTasks.push(cloneTask(task, {
+                            localPath: childLocalPath,
+                            remotePath: childRemotePath,
+                            operationType: 'download',
+                            isDirectory: false
+                        }));
+                    }
+                }
+            };
+            appendDirectoryTasks({ remotePath, localPath });
+            await FileTransfer.addTasks(downloadTasks);
+        } finally {
+            for (const client of clients.slice(1)) {
+                await this.releaseClient(client, task.config);
+            }
+        }
+    }
+
     // 下载任务
-    async downloadFile(client: any, task: Task) {
-        let { localPath, remotePath, config, isDirectory } = task;
+    async downloadFile(client: FileTransferClient, task: Task) {
+        let { localPath, remotePath, config } = task;
+        const ignoreMatcher = this.getDownloadIgnoreMatcher(config);
 
         try {
             if (task.isDirectory) {
-                if (config.type === "ftp") {
-                    await this.downloadFilesFromFTP(client, remotePath, localPath, task)
+                if (!ignoreMatcher.shouldTraverse(remotePath)) return;
+                if (normalizeTraversalConcurrency(config.downloadTraversalConcurrency, 2) > 1) {
+                    await this.downloadFilesWithBoundedTraversal(client, remotePath, localPath, task, ignoreMatcher)
+                } else if (config.type === "ftp") {
+                    await this.downloadFilesFromFTP(client as FTPClientType, remotePath, localPath, task, ignoreMatcher)
                 } else {
-                    await this.downloadFilesFromSFTP(client, remotePath, localPath, task)
+                    await this.downloadFilesFromSFTP(client as SFTPClientType, remotePath, localPath, task, ignoreMatcher)
                 }
             } else {
+                if (ignoreMatcher.isIgnored(remotePath)) return;
                 // 检查本地文件夹是否存在
                 let dirName = path.dirname(task.localPath)
                 if (!fs.existsSync(dirName)) {
@@ -952,27 +1203,14 @@ export default class FileTransfer extends EventEmitter {
 
                 task.remotePath = getNormalPath(task.remotePath)
 
-                let ignoreArr: string[] = []
-                //用户忽略配置
-                if (config.downloadExcludePath) {
-                    if (Array.isArray(config.downloadExcludePath)) {
-                        ignoreArr = config.downloadExcludePath
-                    } else {
-                        ignoreArr = [...config.downloadExcludePath.split(",")]
-                    }
-                }
-                let isExclude = await isIgnore(ignoreArr, task.remotePath, true)
-                if (isExclude) {
-                    return
-                }
-
 
                 FileTransfer.noUploadFiles.add(localPath)
                 if (config.type === "ftp") {
+                    const ftpClient = client as FTPClientType;
                     // 下载文件
-                    const fileSize = await client.size(task.remotePath);
-                    client.trackProgress(async (info: any) => {
-                        if (info.type == 'download') {
+                    const fileSize = await ftpClient.size(task.remotePath);
+                    const onProgress: FTPProgressHandler = (info) => {
+                        if (info.type === 'download') {
                             if (!fileSize) {
                                 task.useTime = getUseTime(task.start)
                                 task.progress = 100
@@ -993,13 +1231,15 @@ export default class FileTransfer extends EventEmitter {
                             }
                             updateTaskProgress();
                         }
-                    });
-                    await client.downloadTo(task.localPath, task.remotePath);
-                    client.trackProgress()
+                    };
+                    ftpClient.trackProgress(onProgress);
+                    await ftpClient.downloadTo(task.localPath, task.remotePath);
+                    ftpClient.trackProgress()
                 } else {
+                    const sftpClient = client as SFTPClientType;
                     // 下载文件
-                    await client.fastGet(task.remotePath, task.localPath, {
-                        step: async (transferred: number, chunk: any, total: number) => {
+                    await sftpClient.fastGet(task.remotePath, task.localPath, {
+                        step: (transferred: number, _chunk: number, total: number) => {
                             oConsole.log(`已传输: ${transferred}/${total} 字节`);
                             let progress = Math.min(parseFloat(((transferred / total) * 100).toFixed(2)), 100);
                             task.progress = progress
@@ -1021,17 +1261,26 @@ export default class FileTransfer extends EventEmitter {
     }
 
 
-    async downloadFilesFromFTP(client: any, remotePath: string, localPath: string, task: Task) {
+    async downloadFilesFromFTP(
+        client: FTPClientType,
+        remotePath: string,
+        localPath: string,
+        task: Task,
+        ignoreMatcher: PathIgnoreMatcher = this.getDownloadIgnoreMatcher(task.config)
+    ) {
         try {
+            if (!ignoreMatcher.shouldTraverse(remotePath)) return;
             const list = await client.list(remotePath); // 列出远程文件
             for (const item of list) {
                 let remoteFilePath = path.posix.join(remotePath, item.name);
                 const localFilePath = path.join(localPath, item.name);
 
                 if (item.isDirectory) {
-                    // 递归处理子目录
-                    await this.downloadFilesFromFTP(client, remoteFilePath, localFilePath, task);
+                    if (!ignoreMatcher.shouldTraverse(remoteFilePath)) continue;
+                    // 递歸處理子目錄
+                    await this.downloadFilesFromFTP(client, remoteFilePath, localFilePath, task, ignoreMatcher);
                 } else {
+                    if (ignoreMatcher.isIgnored(remoteFilePath)) continue;
                     const obj = cloneTask(task, {
                         localPath: localFilePath,
                         remotePath: remoteFilePath,
@@ -1047,17 +1296,26 @@ export default class FileTransfer extends EventEmitter {
         }
     }
 
-    async downloadFilesFromSFTP(client: any, remotePath: string, localPath: string, task: Task) {
+    async downloadFilesFromSFTP(
+        client: SFTPClientType,
+        remotePath: string,
+        localPath: string,
+        task: Task,
+        ignoreMatcher: PathIgnoreMatcher = this.getDownloadIgnoreMatcher(task.config)
+    ) {
         try {
+            if (!ignoreMatcher.shouldTraverse(remotePath)) return;
             const list = await client.list(remotePath); // 列出远程文件
             for (const item of list) {
                 let remoteFilePath = path.posix.join(remotePath, item.name);
                 const localFilePath = path.join(localPath, item.name);
 
                 if (item.type === 'd') { // 检查是否是目录
-                    // 递归处理子目录
-                    await this.downloadFilesFromSFTP(client, remoteFilePath, localFilePath, task);
+                    if (!ignoreMatcher.shouldTraverse(remoteFilePath)) continue;
+                    // 递歸處理子目錄
+                    await this.downloadFilesFromSFTP(client, remoteFilePath, localFilePath, task, ignoreMatcher);
                 } else {
+                    if (ignoreMatcher.isIgnored(remoteFilePath)) continue;
                     const obj = cloneTask(task, {
                         localPath: localFilePath,
                         remotePath: remoteFilePath,
@@ -1073,12 +1331,12 @@ export default class FileTransfer extends EventEmitter {
         }
     }
 
-    async existFTPFile(client: any, remotePath: string) {
+    async existFTPFile(client: FTPClientType, remotePath: string) {
         let exists = false
         try {
             let dirname = getNormalPath(path.dirname(remotePath));
-            let res = await client.list(dirname)
-            if (res.filter((v: any) => v.name == path.basename(remotePath)).length == 1) {
+            let res: FTPRemoteFileInfo[] = await client.list(dirname)
+            if (res.filter((v) => v.name === path.basename(remotePath)).length === 1) {
                 exists = true
             }
         } catch (err) {
@@ -1088,7 +1346,7 @@ export default class FileTransfer extends EventEmitter {
     }
 
     // 重命名任务
-    async renameFile(client: any, task: Task, from: boolean = true) {
+    async renameFile(client: FileTransferClient, task: Task, from: boolean = true) {
         let { localPath: oldPath, remotePath: newPath, config, fileType } = task;
         if (!oldPath || !newPath) return
 
@@ -1108,11 +1366,13 @@ export default class FileTransfer extends EventEmitter {
             let exists = false
             // 检查文件是否存在
             if (config.type === "ftp") {
+                const ftpClient = client as FTPClientType;
                 oldPath = path.posix.join("/", oldPath)
                 newPath = path.posix.join("/", newPath)
-                exists = await this.existFTPFile(client, oldPath)
+                exists = await this.existFTPFile(ftpClient, oldPath)
             } else {
-                exists = await client.exists(oldPath);
+                const sftpClient = client as SFTPClientType;
+                exists = Boolean(await sftpClient.exists(oldPath));
             }
             if (exists) {
                 //存在直接重命名
@@ -1154,7 +1414,7 @@ export default class FileTransfer extends EventEmitter {
     }
 
     // 删除任务
-    async deleteFile(client: any, task: Task, from: boolean = true) {
+    async deleteFile(client: FileTransferClient, task: Task, from: boolean = true) {
         let { remotePath, config } = task;
         try {
             let { up_to_root, remotePath: newRemotePath } = isUpRoot(this.configItem, remotePath, this.rootPath)
@@ -1163,6 +1423,7 @@ export default class FileTransfer extends EventEmitter {
             }
             remotePath = getNormalPath(remotePath)
             if (config.type === "ftp") {
+                const ftpClient = client as FTPClientType;
                 let basename = path.basename(remotePath)
                 // 判断basename中是否包含空格
                 let dirname = path.dirname(remotePath)
@@ -1170,33 +1431,33 @@ export default class FileTransfer extends EventEmitter {
                 basename = getNormalPath(basename)
                 dirname = getNormalPath(dirname)
                 if (basename == ".") {
-                    await client.removeDir(remotePath, true)
+                    await ftpClient.removeDir(remotePath)
                 } else {
                     if (/\s/.test(basename)) {
-                        await client.cd(dirname)
-                        let files = await client.list()
+                        await ftpClient.cd(dirname)
+                        let files = await ftpClient.list()
                         for (const v of files) {
                             if (v.name == basename) {
                                 if (v.type == 1) {
-                                    await client.remove(basename)
+                                    await ftpClient.remove(basename)
                                 }
                                 if (v.type == 2) {
-                                    await client.removeDir(basename)
+                                    await ftpClient.removeDir(basename)
                                 }
                             }
                         }
-                        await client.cd("/")
+                        await ftpClient.cd("/")
                     } else {
-                        let files = await client.list(dirname)
+                        let files = await ftpClient.list(dirname)
                         if (files.length) {
                             for (let v of files) {
                                 if (v.name == basename) {
                                     // type 0 Unknown 1 File 2 Directory 3 SymbolicLink
                                     if (v.type == 1) {
-                                        await client.remove(remotePath)
+                                        await ftpClient.remove(remotePath)
                                     }
                                     if (v.type == 2) {
-                                        await client.removeDir(remotePath, true)
+                                        await ftpClient.removeDir(remotePath)
                                     }
                                 }
                             }
@@ -1204,13 +1465,14 @@ export default class FileTransfer extends EventEmitter {
                     }
                 }
             } else {
-                const res = await client.exists(remotePath);
+                const sftpClient = client as SFTPClientType;
+                const res = await sftpClient.exists(remotePath);
                 // 判断是文件还是文件夹
                 if (res) {
                     if (res == "-") {
-                        await client.delete(remotePath)
+                        await sftpClient.delete(remotePath)
                     } else if (res == "d") {
-                        await client.rmdir(remotePath, true)
+                        await sftpClient.rmdir(remotePath, true)
                     }
                 }
             }
@@ -1226,26 +1488,27 @@ export default class FileTransfer extends EventEmitter {
 
     // 动态增加并发数
     async addMaxConcurrency(config: FileTransferConfigItem) {
-        const queue = FileTransfer.queues[config.name]; // 根据 configItem.name 获取对应的队列
+        const scopeKey = getConfigScopeKey(config);
+        const queue = FileTransfer.queues[scopeKey];
         if (!queue || queue.length() < this.uploadTaskNumber || queue.concurrency >= this.maxConnections) {
             return
         }
 
-        const inFlightProbe = FileTransfer.concurrencyProbeInFlight[config.name];
+        const inFlightProbe = FileTransfer.concurrencyProbeInFlight[scopeKey];
         if (inFlightProbe) {
             oConsole.log(`Concurrency probe for ${config.name} already in progress, reusing it.`);
             return inFlightProbe;
         }
 
         const now = Date.now();
-        const lastStartedAt = FileTransfer.concurrencyProbeLastStartedAt[config.name] || 0;
+        const lastStartedAt = FileTransfer.concurrencyProbeLastStartedAt[scopeKey] || 0;
         const elapsed = now - lastStartedAt;
         if (elapsed < FileTransfer.concurrencyProbeCooldownMs) {
             oConsole.log(`Skipping concurrency probe for ${config.name}; cooldown ${FileTransfer.concurrencyProbeCooldownMs - elapsed}ms remaining.`);
             return
         }
 
-        FileTransfer.concurrencyProbeLastStartedAt[config.name] = now;
+        FileTransfer.concurrencyProbeLastStartedAt[scopeKey] = now;
         const probe = this.mutex.runExclusive(async () => {
             if (queue.length() < this.uploadTaskNumber || queue.concurrency >= this.maxConnections) {
                 return
@@ -1259,8 +1522,8 @@ export default class FileTransfer extends EventEmitter {
             while (retryCount < maxRetries && testSuccess) {
                 try {
                     const pool = (config.type === "ftp")
-                        ? FileTransfer.ftpConnectionPools[config.name]
-                        : FileTransfer.sftpConnectionPools[config.name];
+                        ? FileTransfer.ftpConnectionPools[scopeKey]
+                        : FileTransfer.sftpConnectionPools[scopeKey];
 
                     if (pool.length >= this.maxConnections + queue.running()) {
                         oConsole.log(`Max connections of ${this.maxConnections} already achieved.`);
@@ -1278,7 +1541,7 @@ export default class FileTransfer extends EventEmitter {
                     if (queue.concurrency < this.maxConnections) {
                         oConsole.log(`Increasing concurrency...`);
                         queue.concurrency++;
-                        FileTransfer.maxConnectionsMap[config.name] = queue.concurrency;
+                        FileTransfer.maxConnectionsMap[scopeKey] = queue.concurrency;
                         break;
                     } else {
                         oConsole.log(`Connection pool not filled. Current pool length: ${queue.concurrency}`);
@@ -1298,28 +1561,29 @@ export default class FileTransfer extends EventEmitter {
             }
 
             oConsole.log(`Final connection pool length: ${(config.type === "ftp")
-                ? FileTransfer.ftpConnectionPools[config.name].length
-                : FileTransfer.sftpConnectionPools[config.name].length}`);
+                ? FileTransfer.ftpConnectionPools[scopeKey].length
+                : FileTransfer.sftpConnectionPools[scopeKey].length}`);
 
         });
 
-        FileTransfer.concurrencyProbeInFlight[config.name] = probe;
+        FileTransfer.concurrencyProbeInFlight[scopeKey] = probe;
         try {
             await probe;
         } finally {
-            delete FileTransfer.concurrencyProbeInFlight[config.name];
+            delete FileTransfer.concurrencyProbeInFlight[scopeKey];
         }
     }
 
-    async checkExistFolder(config: FileTransferConfigItem, client: any, file: string) {
+    async checkExistFolder(config: FileTransferConfigItem, client: FileTransferClient, file: string) {
         file = path.posix.join("/", file)
         file = getNormalPath(file)
-        const existingDirs = this.existCreateDir[config.name] || (this.existCreateDir[config.name] = new Set());
+        const scopeKey = getConfigScopeKey(config);
+        const existingDirs = this.existCreateDir[scopeKey] || (this.existCreateDir[scopeKey] = new Set());
         if (existingDirs.has(file)) {
             return
         }
 
-        const pendingDirs = this.existCreateDirPending[config.name] || (this.existCreateDirPending[config.name] = new Map());
+        const pendingDirs = this.existCreateDirPending[scopeKey] || (this.existCreateDirPending[scopeKey] = new Map());
         const pending = pendingDirs.get(file);
         if (pending) {
             return pending;
@@ -1327,15 +1591,17 @@ export default class FileTransfer extends EventEmitter {
 
         const ensureFolder = (async () => {
             if (config.type === "ftp") {
-                let exist = await this.existFTPFile(client, file)
+                const ftpClient = client as FTPClientType;
+                let exist = await this.existFTPFile(ftpClient, file)
                 if (!exist) {
-                    await client.ensureDir(file)
+                    await ftpClient.ensureDir(file)
                 }
                 existingDirs.add(file);
             } else {
-                const exists = await client.exists(file);
+                const sftpClient = client as SFTPClientType;
+                const exists = await sftpClient.exists(file);
                 if (!exists) {
-                    await client.mkdir(file, true)
+                    await sftpClient.mkdir(file, true)
                 }
                 existingDirs.add(file);
             }
@@ -1353,30 +1619,51 @@ export default class FileTransfer extends EventEmitter {
      * 关闭所有 FTP 或 SFTP 连接
      * @param name 指定要关闭的连接池名称，默认为空字符串，表示关闭所有连接池
      */
-    static async closeAll(name: string = '') {
-        const closeConnections = async (pools: Record<string, any[]>, closeMethod: string) => {
-            const tasks = [];
-            for (const [k, clients] of Object.entries(pools)) {
-                !name && await FileTransfer.changeAsyncStatus(k, 'stop');
-                // 并行关闭所有客户端
-                tasks.push(...clients.map(async (client) => {
-                    await client[closeMethod]();
-                }));
-                // 清空连接池
-                pools[k] = [];
+    static async closeAll(config?: FileTransferConfigItem) {
+        const targetScope = config ? getConfigScopeKey(config) : '';
+        if (config) {
+            await FileTransfer.changeAsyncStatus(config, 'stop', 'stopped');
+        } else {
+            for (const queueConfig of Object.values(FileTransfer.queueConfigs)) {
+                await FileTransfer.changeAsyncStatus(queueConfig, 'stop', 'stopped');
             }
+        }
 
-            // 等待所有客户端关闭操作完成
+        const closeConnections = async <T extends FileTransferClient>(
+            pools: Record<string, T[]>,
+            closeClient: (client: T) => void | Promise<void>
+        ) => {
+            const tasks = [];
+            for (const [scopeKey, clients] of Object.entries(pools)) {
+                if (targetScope && scopeKey !== targetScope) continue;
+                tasks.push(...clients.map(async (client) => {
+                    await closeClient(client);
+                }));
+                pools[scopeKey] = [];
+            }
             await Promise.all(tasks);
         };
 
-        await closeConnections(FileTransfer.ftpConnectionPools, 'close');
-        await closeConnections(FileTransfer.sftpConnectionPools, 'end');
+        await closeConnections(FileTransfer.ftpConnectionPools, client => client.close());
+        await closeConnections(FileTransfer.sftpConnectionPools, client => client.end());
+        if (targetScope) {
+            delete FileTransfer.queueConfigs[targetScope];
+            FileTransfer.connectionLimiters.delete(targetScope);
+        } else {
+            FileTransfer.queueConfigs = {};
+            FileTransfer.connectionLimiters.clear();
+            FileTransfer.clientLeaseReleases = new WeakMap();
+        }
     }
 
 
-    static async changeAsyncStatus(name: string, type: string) {
-        const queue = FileTransfer.queues[name]; // 根据 configItem.name 获取对应的队列
+    static async changeAsyncStatus(
+        config: FileTransferConfigItem,
+        type: string,
+        terminalState: TaskTerminalState = 'stopped'
+    ) {
+        const scopeKey = getConfigScopeKey(config);
+        const queue = FileTransfer.queues[scopeKey];
         if (!queue) return
         switch (type) {
             case 'pause':
@@ -1386,12 +1673,11 @@ export default class FileTransfer extends EventEmitter {
                 queue.resume();
                 break;
             case 'stop':
+                FileTransfer.queueTerminalStates[scopeKey] = terminalState;
                 queue.kill();
-                myEvent.fire({
-                    name: name,
-                    status: 'complete_sync',
-                    type: 'refreshSyncStatus',
-                })
+                await FileTransfer.queueOwners[scopeKey]?.finalizeQueue(FileTransfer.queueConfigs[scopeKey] || config, terminalState);
+                delete FileTransfer.queues[scopeKey];
+                delete FileTransfer.queueOwners[scopeKey];
                 break;
             default:
                 break;
@@ -1403,38 +1689,64 @@ export default class FileTransfer extends EventEmitter {
         oConsole.log("清空缓存");
         // 获取 workspaceState 对象
         const workspaceState = this.context.workspaceState
-        let cache_key = config.name + "###" + this.rootPath
-        await workspaceState.update(cache_key, "")
+        const rootPath = config.workspaceRoot || this.rootPath
+        const cache_key = `${config.name}###${rootPath}`
+        await clearWatchCache(workspaceState, cache_key)
         myEvent.fire("update")
     }
 
     static async addTask(task: Task, lock: boolean = false) {
-        const instance = FileTransfer.instance;
-        const queue = FileTransfer.queues[task.config.name]; // 根据 config.name 获取对应的队列
-        task.remotePath = getNormalPath(task.remotePath)
+        await FileTransfer.addTasks([task], lock)
+    }
 
-        myEvent.fire({
-            name: task.config.name,
-            status: 'start_sync',
-            type: 'refreshSyncStatus',
-        })
+    static async addTasks(tasks: Task[], lock: boolean = false) {
+        const groupedTasks = new Map<string, Task[]>()
+        for (const task of tasks) {
+            const scopeKey = getConfigScopeKey(task.config)
+            const scopedTasks = groupedTasks.get(scopeKey) || []
+            scopedTasks.push(task)
+            groupedTasks.set(scopeKey, scopedTasks)
+        }
 
-        try {
-            if (lock) {
+        for (const [scopeKey, scopedTasks] of groupedTasks) {
+            if (!scopedTasks.length) continue
+            const config = scopedTasks[0].config
+            if (!FileTransfer.queues[scopeKey]) {
+                new FileTransfer(config)
+            }
+            const instance = FileTransfer.queueOwners[scopeKey] || FileTransfer.instance
+            const queue = FileTransfer.queues[scopeKey]
+            if (!queue) throw new Error(`Task queue is not initialized: ${scopeKey}`)
+            FileTransfer.finalizedQueues.delete(scopeKey)
+            FileTransfer.queueTerminalStates[scopeKey] = undefined
+            for (const task of scopedTasks) {
+                task.remotePath = getNormalPath(task.remotePath)
+            }
+
+            myEvent.fire({
+                name: config.name,
+                workspaceRoot: config.workspaceRoot,
+                status: 'start_sync',
+                type: 'refreshSyncStatus',
+            })
+
+            try {
+                if (lock) {
                 // 如果需要锁，获取锁并执行任务
                 const release = await instance.mutex.acquire();
                 try {
-                    queue.push(task);
+                    queue.push(scopedTasks);
                 } finally {
                     release();  // 确保任务执行完成后释放锁
                 }
-            } else {
+                } else {
                 // 不需要锁的任务直接执行
-                queue.push(task);
-            }
-        } catch (error) {
+                    queue.push(scopedTasks);
+                }
+            } catch (error) {
             // 捕获并处理异常
-            oConsole.error("Failed to add task to queue:", error);
+                oConsole.error("Failed to add tasks to queue:", error);
+            }
         }
     }
 }

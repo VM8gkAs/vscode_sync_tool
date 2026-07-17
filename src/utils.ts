@@ -1,9 +1,10 @@
 import fs from "fs-extra"
+import type { Dirent, Stats } from "fs"
 import path from "path"
 import * as vscode from "vscode"
 import { l10n } from "vscode"
 import stripJsonComments from "strip-json-comments"
-import { DeployConfigItem, FileTransferConfigItem, Permissions } from "./types/config"
+import { DeployConfigItem, FileTransferConfigItem, opType, PathChangeType, Permissions } from "./types/config"
 // 默认配置
 import { configText, getExampleText } from "./config/default"
 // jsonc处理
@@ -12,9 +13,54 @@ import * as jsonc from "jsonc-parser"
 import { Minimatch } from "minimatch"
 import { getContext } from "./config/globals"
 import dayjs = require("dayjs")
+import { execFile } from "child_process"
 
 
-const { exec } = require("child_process")
+export type GitCommandResult = {
+	stdout: string;
+	stderr: string;
+	code: number | null;
+	signal?: NodeJS.Signals | null;
+	timedOut?: boolean;
+	errorCode?: string;
+};
+
+export type GitCommandRunner = (args: readonly string[], cwd: string) => Promise<GitCommandResult>;
+
+const GIT_COMMAND_TIMEOUT_MS = 120000;
+
+export const execGitCommand: GitCommandRunner = (args, cwd) => new Promise((resolve) => {
+	execFile(
+		"git",
+		[...args],
+		{
+			cwd,
+			windowsHide: true,
+			timeout: GIT_COMMAND_TIMEOUT_MS,
+			maxBuffer: 1024 * 1024
+		},
+		(error, stdout, stderr) => {
+			if (!error) {
+				resolve({ stdout, stderr, code: 0 });
+				return;
+			}
+
+			const execError = error as NodeJS.ErrnoException & {
+				code?: string | number;
+				killed?: boolean;
+				signal?: NodeJS.Signals | null;
+			};
+			resolve({
+				stdout,
+				stderr: stderr || execError.message,
+				code: typeof execError.code === "number" ? execError.code : null,
+				signal: execError.signal ?? null,
+				timedOut: execError.killed === true && execError.signal === "SIGTERM",
+				errorCode: typeof execError.code === "string" ? execError.code : undefined
+			});
+		}
+	);
+});
 
 export function sleep(ms: number = 1000) {
 	return new Promise(resolve => setTimeout(resolve, ms));
@@ -40,14 +86,23 @@ export const oConsole = {
 
 
 //获取插件配置
-export const getPluginSetting = () => {
-	return vscode.workspace.getConfiguration("SyncTools")
+export const getPluginSetting = (workspaceRoot?: string) => {
+	const scope = workspaceRoot ? vscode.Uri.file(workspaceRoot) : undefined
+	return vscode.workspace.getConfiguration("SyncTools", scope)
 }
 
 type CompiledIgnoreRule = {
 	raw: string;
+	pattern: string;
+	negated: boolean;
+	literalPrefix: string;
 	matcher: Minimatch;
-	childMatcher?: Minimatch;
+	childMatcher: Minimatch;
+};
+
+export type PathIgnoreMatcher = {
+	isIgnored: (file: string) => boolean;
+	shouldTraverse: (directory: string) => boolean;
 };
 
 const ignoreMatcherCache = new Map<string, CompiledIgnoreRule[]>();
@@ -64,15 +119,27 @@ function compileIgnoreRules(ignoreArr: string[] = []) {
 		return cached;
 	}
 
-	const rules = ignoreArr.map((rule) => {
-		const normalizedRule = getNormalPath(rule);
-		const isNegated = normalizedRule.startsWith("!");
-		const pattern = isNegated ? normalizedRule.slice(1) : normalizedRule;
-		return {
-			raw: normalizedRule,
-			matcher: new Minimatch(pattern),
-			childMatcher: isNegated ? new Minimatch(getNormalPath(path.join(pattern, "**"))) : undefined
-		};
+	const rules = ignoreArr.flatMap((rule): CompiledIgnoreRule[] => {
+		const normalizedRule = getNormalPath(rule.trim());
+		const negated = normalizedRule.startsWith("!");
+		const pattern = (negated ? normalizedRule.slice(1) : normalizedRule)
+			.replace(/^\.\//, "")
+			.replace(/^\/+/, "")
+			.replace(/\/+$/, "");
+		if (!pattern || pattern === ".." || pattern.startsWith("../") || /^[A-Za-z]:\//.test(pattern)) {
+			return [];
+		}
+		const globIndex = pattern.search(/[*?[\]{}()]/);
+		const literalPrefix = (globIndex === -1 ? pattern : pattern.slice(0, globIndex))
+			.replace(/\/+$/, "");
+		return [{
+			raw: `${negated ? "!" : ""}${pattern}`,
+			pattern,
+			negated,
+			literalPrefix,
+			matcher: new Minimatch(pattern, { dot: true }),
+			childMatcher: new Minimatch(`${pattern}/**`, { dot: true })
+		}];
 	});
 
 	ignoreMatcherCache.set(key, rules);
@@ -86,19 +153,54 @@ function compileIgnoreRules(ignoreArr: string[] = []) {
 	return rules;
 }
 
-function createIgnorePredicate(ignoreArr: string[] = [], rootPath: string, flag: boolean = false) {
+function getRelativeIgnorePath(rootPath: string, file: string): string | null {
+	const usePosix = rootPath.startsWith("/") && file.startsWith("/");
+	const relative = usePosix
+		? path.posix.relative(getNormalPath(rootPath), getNormalPath(file))
+		: path.relative(path.resolve(rootPath), path.resolve(file));
+	const normalized = getNormalPath(relative || ".");
+	if (normalized === ".." || normalized.startsWith("../") || path.isAbsolute(relative)) {
+		return null;
+	}
+	return normalized === "." ? "" : normalized;
+}
+
+function canNegationMatchDescendant(rule: CompiledIgnoreRule, directory: string) {
+	if (!rule.negated) {
+		return false;
+	}
+	if (!directory || !rule.literalPrefix) {
+		return true;
+	}
+	return rule.literalPrefix === directory
+		|| rule.literalPrefix.startsWith(`${directory}/`)
+		|| directory.startsWith(`${rule.literalPrefix}/`);
+}
+
+export function createPathIgnoreMatcher(ignoreArr: string[] = [], rootPath: string): PathIgnoreMatcher {
 	const rules = compileIgnoreRules(ignoreArr);
-	return (file: string) => {
-		const normalizedPath = flag ? getNormalPath(file) : getNormalPath(path.relative(rootPath, file));
-		const matchedRules: string[] = [];
+	const isIgnored = (file: string) => {
+		const normalizedPath = getRelativeIgnorePath(rootPath, file);
+		if (normalizedPath === null) {
+			return true;
+		}
+		let ignored = false;
 		for (const rule of rules) {
-			if (rule.matcher.match(normalizedPath) || (rule.childMatcher && rule.childMatcher.match(normalizedPath))) {
-				matchedRules.push(rule.raw);
+			if (rule.matcher.match(normalizedPath) || rule.childMatcher.match(normalizedPath)) {
+				ignored = !rule.negated;
 			}
 		}
-
-		const longest = getLongestString(matchedRules);
-		return Boolean(longest && !longest.startsWith("!"));
+		return ignored;
+	};
+	return {
+		isIgnored,
+		shouldTraverse: (directory: string) => {
+			const normalizedPath = getRelativeIgnorePath(rootPath, directory);
+			if (normalizedPath === null) {
+				return false;
+			}
+			return !isIgnored(directory) || rules.some(rule => canNegationMatchDescendant(rule, normalizedPath));
+		}
 	};
 }
 
@@ -149,43 +251,89 @@ export const showInformationMessage = (msg: string, confirmText = l10n.t('Confir
 
 
 /**
- * 获取根路径
+ * 取得目前所有 workspace folder 路徑。
+ */
+export function getWorkspaceRoots(): string[] {
+	return (vscode.workspace.workspaceFolders || []).map(folder => folder.uri.fsPath);
+}
+
+/**
+ * 取得檔案所屬 workspace folder。多根工作區未指定檔案時不猜測根目錄。
  */
 export function getRootPath(file: string = ""): string {
-	// 获取当前打开的工作区文件夹
-	let workspaceFolders = vscode.workspace.workspaceFolders
-	if (workspaceFolders && workspaceFolders.length) {
-		return workspaceFolders[0].uri.fsPath;
-	} else {
-		return "";
+	const workspaceFolders = vscode.workspace.workspaceFolders || [];
+	if (!file) {
+		return workspaceFolders.length === 1 ? workspaceFolders[0].uri.fsPath : "";
 	}
 
-	// if (workspaceFolders) {
-	// 	let rootPath = ""
-	// 	//根据当前文件区分工作区
-	// 	if (file) {
-	// 		if (workspaceFolders.length > 1) {
-	// 			rootPath = path.dirname(file)
-	// 			workspaceFolders.map((v) => {
-	// 				if (file.indexOf(v.uri.fsPath) != -1) {
-	// 					rootPath = v.uri.fsPath
-	// 				}
-	// 			})
-	// 		} else {
-	// 			let workPath = workspaceFolders[0].uri.fsPath
-	// 			if (isSubPath(file, workPath)) {
-	// 				rootPath = workPath
-	// 			} else {
-	// 				rootPath = path.dirname(file)
-	// 			}
-	// 		}
-	// 	} else {
-	// 		rootPath = workspaceFolders[0].uri.fsPath
-	// 	}
-	// 	return rootPath
-	// } else {
-	// 	return ""
-	// }
+	const workspaceFolder = vscode.workspace.getWorkspaceFolder?.(vscode.Uri.file(file));
+	return workspaceFolder?.uri.fsPath || "";
+}
+
+export function getConfigScopeKey(config: Pick<FileTransferConfigItem, "name" | "workspaceRoot">): string {
+	return `${config.workspaceRoot || ""}###${config.name}`;
+}
+
+export const DEFAULT_SYNC_LOG_DIRECTORY = "sync_logs";
+
+export function resolveSyncLogDirectory(
+	workspaceRoot: string,
+	relativeDirectory: unknown = DEFAULT_SYNC_LOG_DIRECTORY
+): string | null {
+	if (!workspaceRoot || typeof relativeDirectory !== "string") return null;
+
+	const configuredDirectory = relativeDirectory.trim();
+	if (!configuredDirectory || path.isAbsolute(configuredDirectory)) return null;
+
+	const resolvedRoot = path.resolve(workspaceRoot);
+	const resolvedDirectory = path.resolve(resolvedRoot, configuredDirectory);
+	const relative = path.relative(resolvedRoot, resolvedDirectory);
+	if (
+		!relative
+		|| relative === ".."
+		|| relative.startsWith(`..${path.sep}`)
+		|| path.isAbsolute(relative)
+	) {
+		return null;
+	}
+
+	return resolvedDirectory;
+}
+
+export function getConfigCacheDirectoryName(config: Pick<FileTransferConfigItem, "name" | "workspaceRoot">): string {
+	return encodeURIComponent(getConfigScopeKey(config));
+}
+
+export function getWorkspaceStateKey(prefix: string, rootPath: string, name: string = ""): string {
+	return [prefix, rootPath, name].filter(Boolean).join("###");
+}
+
+export function normalizeTraversalConcurrency(value: unknown, fallback: number, maximum: number = 16): number {
+	const parsed = typeof value === "number" ? value : Number(value);
+	if (!Number.isFinite(parsed)) return fallback;
+	return Math.min(maximum, Math.max(1, Math.floor(parsed)));
+}
+
+function isMissingPathError(error: unknown): boolean {
+	return typeof error === "object" && error !== null && "code" in error && error.code === "ENOENT";
+}
+
+function createAsyncLimiter(maxConcurrency: number) {
+	let active = 0;
+	const waiters: Array<() => void> = [];
+
+	return async function runLimited<T>(operation: () => Promise<T>): Promise<T> {
+		if (active >= maxConcurrency) {
+			await new Promise<void>(resolve => waiters.push(resolve));
+		}
+		active++;
+		try {
+			return await operation();
+		} finally {
+			active--;
+			waiters.shift()?.();
+		}
+	};
 }
 
 /**
@@ -198,44 +346,47 @@ export function getRootPath(file: string = ""): string {
 export const getAllFiles = async (
 	dir: string,
 	is_ignore: boolean = false,
-	ignore_arr: string[] = []
+	ignore_arr: string[] = [],
+	concurrency: number = 4
 ) => {
-	let results: string[] = []
-	const ignorePredicate = is_ignore ? createIgnorePredicate(ignore_arr, getRootPath(dir)) : undefined;
-	const walk = async (currentDir: string) => {
-		if (!fs.existsSync(currentDir)) {
-			return;
+	const traversalRoot = getRootPath(dir) || dir;
+	const ignoreMatcher = is_ignore ? createPathIgnoreMatcher(ignore_arr, traversalRoot) : undefined;
+	const readDirectory = createAsyncLimiter(normalizeTraversalConcurrency(concurrency, 4));
+
+	const walk = async (currentPath: string): Promise<string[]> => {
+		let stat: Stats;
+		try {
+			stat = await fs.promises.lstat(currentPath);
+		} catch (error) {
+			if (isMissingPathError(error)) return [];
+			throw error;
 		}
-		const currentStat = fs.lstatSync(currentDir);
-		if (!currentStat.isDirectory()) {
-			if (!ignorePredicate || !ignorePredicate(currentDir)) {
-				results.push(currentDir);
-			}
-			return;
+
+		if (!stat.isDirectory()) {
+			return !ignoreMatcher || !ignoreMatcher.isIgnored(currentPath) ? [currentPath] : [];
 		}
-		let files = fs.readdirSync(currentDir)
-		for (let item of files) {
-			let flag = false
-			item = path.join(currentDir, item)
-			if (ignorePredicate) {
-				let res = ignorePredicate(item)
-				if (!res) {
-					flag = true
-				}
-			} else {
-				flag = true
-			}
-			if (flag) {
-				if (fs.lstatSync(item).isDirectory()) {
-					await walk(item)
-				} else {
-					results.push(item)
-				}
-			}
+		if (ignoreMatcher && !ignoreMatcher.shouldTraverse(currentPath)) return [];
+
+		let entries: Dirent[];
+		try {
+			entries = await readDirectory(() => fs.promises.readdir(currentPath, { withFileTypes: true }));
+		} catch (error) {
+			if (isMissingPathError(error)) return [];
+			throw error;
 		}
+
+		const parts = await Promise.all(entries.map(async entry => {
+			const itemPath = path.join(currentPath, entry.name);
+			if (entry.isDirectory()) {
+				if (ignoreMatcher && !ignoreMatcher.shouldTraverse(itemPath)) return [];
+				return walk(itemPath);
+			}
+			return !ignoreMatcher || !ignoreMatcher.isIgnored(itemPath) ? [itemPath] : [];
+		}));
+		return parts.flat();
 	}
-	await walk(dir)
-	return results
+
+	return walk(dir)
 }
 
 /**
@@ -252,7 +403,8 @@ export const getAllowFiles = async (
 	view: boolean = false,
 ) => {
 	if (!file) return false
-	let rootPath = getRootPath(file)
+	let rootPath = config.workspaceRoot || getRootPath(file)
+	if (!rootPath) return false
 	let ignore_arr = await getIgnoreConfig(config, file, view)
 	let arr: string[] = []
 	const seenFiles = new Set<string>();
@@ -264,82 +416,83 @@ export const getAllowFiles = async (
 	};
 	//区分根目录和非根目录
 	if (rootPath == file) {
-		let files = await getAllFiles(file, true, ignore_arr)
+		let files = await getAllFiles(file, true, ignore_arr, config.localTraversalConcurrency)
 		files.forEach(addFile)
-		for (const v of ignore_arr) {
-			if (v.startsWith("!")) {
-				const traversalRoot = getNegatedTraversalRoot(rootPath, v);
-				if (!traversalRoot) {
-					continue;
-				}
-				let other_files = await getAllFiles(traversalRoot)
-				for (const vv of other_files) {
-					let flag = await isIgnore(ignore_arr, vv)
-					if (!flag) {
-						addFile(vv)
-					}
-				}
-			}
-		}
 	} else {
 		if (!view) {
 			let new_path = path.relative(rootPath, file)
 			ignore_arr.push("!" + new_path)
 		}
-		let files = await getAllFiles(file)
-		for (const v of files) {
-			let flag = await isIgnore(ignore_arr, v)
-			if (!flag) {
-				addFile(v)
-			}
-		}
+		let files = await getAllFiles(file, true, ignore_arr, config.localTraversalConcurrency)
+		files.forEach(addFile)
 	}
 	return arr
 }
 
 // 检查是否在排除范围内
 export const isIgnore = async (ignore_arr: string[] = [], file: string, flag: boolean = false) => {
-	let rootPath = getRootPath(file)
-	return createIgnorePredicate(ignore_arr, rootPath, flag)(file)
-}
-
-/**
- * 获取字符串数组中最长的字符串
- * @param arr 字符串数组
- * @returns 返回最长字符串，若数组为空或不是数组则返回null
- */
-function getLongestString(arr: string[]) {
-	if (!Array.isArray(arr) || arr.length === 0) {
-		return null;
-	}
-	return arr.reduce((longest, current) => {
-		return current.length > longest.length ? current : longest;
-	}, '');
+	const rootPath = flag ? "/" : getRootPath(file)
+	if (!rootPath) return true
+	return createPathIgnoreMatcher(ignore_arr, rootPath).isIgnored(file)
 }
 
 //获取忽略配置
+function normalizeDirectoryForCompare(file: string) {
+	const normalized = getNormalPath(path.resolve(path.dirname(file)))
+	return process.platform === "win32" ? normalized.toLowerCase() : normalized
+}
+
+export function getPathChangeType(oldPath: string, newPath: string): PathChangeType {
+	return normalizeDirectoryForCompare(oldPath) === normalizeDirectoryForCompare(newPath)
+		? "rename"
+		: "move"
+}
+
+export const resolveWatchChangeForIgnore = async (
+	ignore_arr: string[] = [],
+	file: string,
+	opTypeValue: opType
+): Promise<{ file: string; opType: opType } | null> => {
+	const sourceIgnored = await isIgnore(ignore_arr, file)
+	if (opTypeValue.op !== "rename" || !opTypeValue.newname) {
+		return sourceIgnored ? null : { file, opType: opTypeValue }
+	}
+
+	const targetIgnored = await isIgnore(ignore_arr, opTypeValue.newname)
+	const pathChangeType = getPathChangeType(file, opTypeValue.newname)
+	if (sourceIgnored && targetIgnored) {
+		return null
+	}
+	if (!sourceIgnored && targetIgnored) {
+		return { file, opType: { op: "delete", type: opTypeValue.type } }
+	}
+	if (sourceIgnored && !targetIgnored) {
+		return { file: opTypeValue.newname, opType: { op: "add", type: opTypeValue.type } }
+	}
+	return { file, opType: { ...opTypeValue, pathChangeType } }
+}
+
 export const getIgnoreConfig = (
 	config: FileTransferConfigItem,
 	file: string = "",
-	view: boolean = false
+	_view: boolean = false
 ) => {
 	let context = getContext()
-	let rootPath = getRootPath(file)
+	let rootPath = config.workspaceRoot || getRootPath(file)
+	if (!rootPath) return Promise.resolve<string[]>([])
 
 	let name = config.name
 	//获取插件配置
-	let syncConfig = getPluginSetting()
+	let syncConfig = getPluginSetting(rootPath)
 	const excludePath = syncConfig.get("excludePath")
 
-	if (view) {
-		return Array.isArray(excludePath) ? excludePath : []
-	}
 	const useGitignore = syncConfig.get<boolean>("gitignore")
 
 	return new Promise<string[]>(async (resolve, reject) => {
 		// 获取 workspaceState 对象
 		const workspaceState = context.workspaceState
-		const value = workspaceState.get("ignore_config_" + name)
+		const ignoreCacheKey = getWorkspaceStateKey("ignore_config", rootPath, name)
+		const value = workspaceState.get(ignoreCacheKey)
 		let ignore_arr: string[] = []
 		let ignore_temp: string[] = []
 
@@ -354,6 +507,14 @@ export const getIgnoreConfig = (
 				ignore_temp = [...ignore_temp, ...config.excludePath]
 			} else {
 				ignore_temp = [...ignore_temp, ...config.excludePath.split(",")]
+			}
+		}
+
+		if (syncConfig.get<boolean>("logToFile", false)) {
+			const configuredDirectory = syncConfig.get<string>("logDirectory", DEFAULT_SYNC_LOG_DIRECTORY)
+			const logDirectory = resolveSyncLogDirectory(rootPath, configuredDirectory)
+			if (logDirectory) {
+				ignore_temp.push(getNormalPath(path.relative(rootPath, logDirectory)))
 			}
 		}
 
@@ -374,9 +535,8 @@ export const getIgnoreConfig = (
 						.filter((line: string) => line && !line.startsWith("#"))
 					ignore_temp = [...ignore_temp, ...new_data]
 
-					new_data.map((v) => path.relative(rootPath, v))
 					//  更新配置
-					await workspaceState.update("ignore_config_" + name, new_data)
+					await workspaceState.update(ignoreCacheKey, new_data)
 				}
 			}
 		}
@@ -397,8 +557,64 @@ export const getIgnoreConfig = (
 }
 
 //将配置转化为数组
-export const toArray = (obj: { [x: string]: any }): FileTransferConfigItem[] => {
-	const arr = []
+type SyncConfigRecord = Record<string, Record<string, unknown>>
+
+function isObjectRecord(value: unknown): value is Record<string, unknown> {
+	return typeof value === "object" && value !== null && !Array.isArray(value)
+}
+
+function parseConfigObject(jsonText: string): Record<string, unknown> {
+	const parsed: unknown = JSON.parse(stripJsonComments(jsonText))
+	return isObjectRecord(parsed) ? parsed : {}
+}
+
+function parseSyncConfigRecord(jsonText: string): SyncConfigRecord {
+	const parsed = parseConfigObject(jsonText)
+	const config: SyncConfigRecord = {}
+	for (const [key, value] of Object.entries(parsed)) {
+		if (!isObjectRecord(value)) {
+			throw new Error(`Invalid sync config entry: ${key}`)
+		}
+		config[key] = value
+	}
+	return config
+}
+
+function isSyncConfigRecord(value: unknown): value is SyncConfigRecord {
+	if (!isObjectRecord(value)) return false
+	return Object.values(value).every(isObjectRecord)
+}
+
+function cloneConfigDefaults(defaults: Record<string, unknown>) {
+	return Object.fromEntries(
+		Object.entries(defaults).map(([key, value]) => [
+			key,
+			Array.isArray(value) ? [...value] : value
+		])
+	)
+}
+
+function normalizeConfigEntry(
+	entry: Record<string, unknown>,
+	defaults: Record<string, unknown> = {},
+	typeOverride?: string
+) {
+	const config = Object.assign(cloneConfigDefaults(defaults), entry)
+	const type = typeOverride || (typeof config.type === "string" ? config.type : "")
+	if (typeof config.port === 'string') {
+		config.port = type === 'ftp' ? 21 : 22
+	}
+
+	setDefaultConfig(config, type)
+	if (typeof config.remotePath === "string" && config.remotePath) {
+		config.remotePath = getNormalPath(path.posix.join('/', config.remotePath))
+	}
+	return config
+}
+
+//将配置转化为数组
+export const toArray = (obj: SyncConfigRecord, workspaceRoot: string = ""): FileTransferConfigItem[] => {
+	const arr: FileTransferConfigItem[] = []
 	for (const key in obj) {
 		if (Object.prototype.hasOwnProperty.call(obj, key)) {
 			const element = obj[key]
@@ -416,8 +632,9 @@ export const toArray = (obj: { [x: string]: any }): FileTransferConfigItem[] => 
 						deleteRemote: false
 					},
 					element
-				)
-			})
+				),
+				workspaceRoot
+			} as FileTransferConfigItem)
 		}
 	}
 	return arr
@@ -516,7 +733,7 @@ async function selectConfig(jsonText: string) {
 		return false
 	}
 
-	let newConfig: any = {}
+	let newConfig: Record<string, boolean | string> = {}
 	if (selectedOptions) {
 		// 用户选择了一个或多个选项
 		selectedOptions.forEach((option) => {
@@ -526,38 +743,16 @@ async function selectConfig(jsonText: string) {
 
 	newConfig['type'] = clientType
 
-	let configJson = JSON.parse(stripJsonComments(configText))
-	if (typeof configJson.port === 'string') {
-		if (clientType == 'ftp') {
-			configJson.port = 21
-		} else {
-			configJson.port = 22
-		}
-	}
+	let configJson = normalizeConfigEntry(parseConfigObject(configText), {}, clientType)
 
-	setDefaultConfig(configJson, clientType);
-	if (configJson.syncFileTime === undefined) {
-		configJson.syncFileTime = false
-	}
-	if (configJson.skipIfSame === undefined) {
-		configJson.skipIfSame = configJson.skipIfSameSize ?? true
-	}
-	delete configJson.skipIfSameSize
-	if (configJson.skipCompareMode === undefined) {
-		configJson.skipCompareMode = "size+mtime"
-	}
-	if (configJson.uploadDelay === undefined) {
-		configJson.uploadDelay = 0
-	}
-
-	if (clientType == 'ftp') {
+	if (clientType === 'ftp') {
 		delete configJson.remotePath
 	}
 
 	Object.assign(configJson, newConfig)
 
 	// make edits and apply them
-	let keys: any[] = [label]
+	let keys: string[] = [label]
 	const edits = jsonc.modify(jsonText, [...keys], configJson, {})
 	const updated = jsonc.applyEdits(jsonText, edits)
 
@@ -625,7 +820,7 @@ export async function addConfig(rootPath: string) {
 		let data = fs.readFileSync(filepath, "utf-8")
 		if (data) {
 			let res = JSON.parse(stripJsonComments(data))
-			await workspaceState.update("sync_config", res)
+			await workspaceState.update(getWorkspaceStateKey("sync_config", rootPath), res)
 		}
 	} catch (error) {
 
@@ -643,23 +838,23 @@ export async function addConfig(rootPath: string) {
  */
 export async function getUserConfig(
 	type: number = 1,
-	showErr = 1
-) {
+	showErr = 1,
+	workspaceRoot: string = ""
+): Promise<SyncConfigRecord | false> {
 	try {
 		let context = getContext()
-		let rootPath = getRootPath()
+		let rootPath = workspaceRoot || getRootPath()
+		if (!rootPath) return false
 		// 获取 workspaceState 对象
 		const workspaceState = context.workspaceState
-		const value = workspaceState.get("sync_config")
+		const syncConfigKey = getWorkspaceStateKey("sync_config", rootPath)
+		const value = workspaceState.get(syncConfigKey)
 		//  存在配置直接返回
-		if (value && type == 2) {
+		if (value && type === 2 && isSyncConfigRecord(value)) {
 			return value
 		}
 
-		let configData: Record<string, unknown> = {}
-		if (configText) {
-			configData = JSON.parse(stripJsonComments(configText))
-		}
+		const configData = configText ? parseConfigObject(configText) : {}
 
 		const filepath = path.join(rootPath, "sync_config.jsonc")
 		addGitignore(rootPath)
@@ -679,54 +874,17 @@ export async function getUserConfig(
 				})
 			} else {
 				vscode.commands.executeCommand("setContext", "canEdit", false);
-				return {}
-			}
+			return {}
+		}
 		}
 		let data = fs.readFileSync(filepath, "utf-8")
 
 		if (data) {
-			let res = JSON.parse(stripJsonComments(data))
-
-			Object.keys(res).map(v => {
-				if (res[v]) {
-					if (typeof res[v].port === 'string') {
-						if (res[v].type == 'ftp') {
-							res[v].port = 21
-						} else {
-							res[v].port = 22
-						}
-					}
-
-					setDefaultConfig(res[v], res[v].type);
-					if (res[v].syncFileTime === undefined) {
-						res[v].syncFileTime = false
-					}
-					// skipIfSameSize → skipIfSame 向後相容
-					if (res[v].skipIfSame === undefined) {
-						res[v].skipIfSame = res[v].skipIfSameSize ?? true
-					}
-					delete res[v].skipIfSameSize
-					if (res[v].skipCompareMode === undefined) {
-						res[v].skipCompareMode = "size+mtime"
-					}
-					if (res[v].uploadDelay === undefined) {
-						res[v].uploadDelay = 0
-					}
-				}
-
-				if (res[v].remotePath) {
-					res[v].remotePath = getNormalPath(path.posix.join('/', res[v].remotePath))
-				}
-
-				const configDefaults = Object.fromEntries(
-					Object.entries(configData).map(([key, value]) => [
-						key,
-						Array.isArray(value) ? [...value] : value
-					])
-				);
-				res[v] = Object.assign(configDefaults, res[v]);
-			})
-			await workspaceState.update("sync_config", res)
+			let res = parseSyncConfigRecord(data)
+			for (const [key, value] of Object.entries(res)) {
+				res[key] = normalizeConfigEntry(value, configData)
+			}
+			await workspaceState.update(syncConfigKey, res)
 			vscode.commands.executeCommand("setContext", "canEdit", true);
 
 			return res
@@ -744,7 +902,7 @@ export async function getUserConfig(
 	}
 }
 
-function setDefaultConfig(config: { [x: string]: boolean | number }, type: string) {
+function setDefaultConfig(config: Record<string, unknown>, type: string) {
 	const properties = ['remote_unpacked', 'delete_remote_compress', 'delete_local_compress'];
 
 	properties.forEach(prop => {
@@ -757,101 +915,99 @@ function setDefaultConfig(config: { [x: string]: boolean | number }, type: strin
 		config['syncFileTime'] = false
 	}
 	if (config['skipIfSame'] === undefined) {
-		config['skipIfSame'] = (config as any)['skipIfSameSize'] ?? true
+		config['skipIfSame'] = config['skipIfSameSize'] ?? true
 	}
-	delete (config as any)['skipIfSameSize']
+	delete config['skipIfSameSize']
 	if (!config['skipCompareMode']) {
-		(config as any)['skipCompareMode'] = "size+mtime"
+		config['skipCompareMode'] = "size+mtime"
 	}
 	if (config['uploadDelay'] === undefined) {
 		config['uploadDelay'] = 0
 	}
+	config['localTraversalConcurrency'] = normalizeTraversalConcurrency(config['localTraversalConcurrency'], 4)
+	config['downloadTraversalConcurrency'] = normalizeTraversalConcurrency(config['downloadTraversalConcurrency'], 2)
 }
 
 // 检测git是否提交
 export const checkSubmitGit = async (workspaceRoot: string, config: DeployConfigItem) => {
-	return new Promise(async (resolve, reject) => {
-		let { submit_git_before_upload, submit_git_msg } = config
-		if (submit_git_before_upload) {
-			let msg: any
-			if (submit_git_msg) {
-				msg = submit_git_msg
-			} else {
-				try {
-					msg = await inputMsg({ prompt: l10n.t('Please enter git commit message') })
-				} catch (error) {
-					reject(error)
-					return
-				}
-			}
+	let { submit_git_before_upload, submit_git_msg } = config
+	if (!submit_git_before_upload) return true
 
-			if (!msg) {
-				reject(`\n ${l10n.t('No git commit information was entered')} \n`)
-				return
-			}
+	const msg = submit_git_msg || await inputMsg({ prompt: l10n.t('Please enter git commit message') }, true)
+	if (!msg.trim()) {
+		throw new Error(`\n ${l10n.t('No git commit information was entered')} \n`)
+	}
 
-			let command = `cd ${workspaceRoot} && git add . && git commit -m '${msg}' && git push`
-
-			try {
-				await execCommand(workspaceRoot, msg, command)
-				resolve(true)
-			} catch (error) {
-				reject(error)
-			}
-		} else {
-			resolve(true)
-		}
-	})
+	await runSubmitGit(workspaceRoot, msg)
+	return true
 }
 
-//执行命令
-function execCommand(workspaceRoot: string, msg: string, command: string) {
-	return new Promise((resolve, reject) => {
-		exec(command, (error: any, stdout: any, stderr: string | undefined) => {
-			if (stdout) {
-				// reject('git: ' + stdout)
-				if (stdout.indexOf("no changes added to commit") != -1) {
-					command = `cd ${workspaceRoot} && git add . && git commit -m '${msg}' && git push`
-					resolve(execCommand(workspaceRoot, msg, command))
-					return
-				} else if (stdout.indexOf("Your branch is ahead of") != -1) {
-					command = `cd ${workspaceRoot} &&  git push`
-					resolve(execCommand(workspaceRoot, msg, command))
-					return
-				} else if (stdout.indexOf("Your branch is up to date with") != -1) {
-					resolve(true)
-					return
-				}
-			}
-			if (stderr) {
-				let arr: any[] = []
-				stderr.split("\n").forEach((line: string) => {
-					if (line && line.indexOf("error:") != -1) {
-						arr.push(line)
-					}
-					if (line && line.indexOf("hint:") != -1) {
-						arr.push(line.replace("hint:", ""))
-					}
-				})
-				if (arr.length) {
-					reject(
-						`\n ${l10n.t('Git commit failed, please commit manually')} \n` + arr.join(" \n ")
-					)
-					return
-				}
+export type GitSubmitResult = {
+	committed: boolean;
+	noChanges: boolean;
+	pushed: boolean;
+};
 
-				if (stderr.indexOf("fatal") != -1) {
-					reject(`\n ${l10n.t('Git commit failed, please commit manually')} \n` + stderr)
-					return
-				}
-			}
-			if (error) {
-				reject(`\n ${l10n.t('Git commit failed, please commit manually')} \n`)
-				return
-			}
-			resolve(true)
-		})
-	})
+export async function runSubmitGit(
+	workspaceRoot: string,
+	message: string,
+	runGitCommand: GitCommandRunner = execGitCommand
+): Promise<GitSubmitResult> {
+	const commitMessage = message.trim()
+	if (!commitMessage) {
+		throw new Error(`\n ${l10n.t('No git commit information was entered')} \n`)
+	}
+
+	await expectGitOk("add", await runGitCommand(["add", "."], workspaceRoot))
+	const diffResult = await runGitCommand(["diff", "--cached", "--quiet"], workspaceRoot)
+	if (diffResult.code === 0) {
+		await expectGitOk("push", await runGitCommand(["push"], workspaceRoot))
+		return { committed: false, noChanges: true, pushed: true }
+	}
+	if (diffResult.code !== 1) {
+		throwGitFailure("diff", diffResult)
+	}
+
+	await expectGitOk("commit", await runGitCommand(["commit", "-m", commitMessage], workspaceRoot))
+	await expectGitOk("push", await runGitCommand(["push"], workspaceRoot))
+	return { committed: true, noChanges: false, pushed: true }
+}
+
+function expectGitOk(step: string, result: GitCommandResult) {
+	if (result.code === 0) return
+	throwGitFailure(step, result)
+}
+
+function throwGitFailure(step: string, result: GitCommandResult): never {
+	const kind = getGitFailureKind(step, result)
+	const detail = [result.stderr, result.stdout]
+		.map(text => text.trim())
+		.filter(Boolean)
+		.join("\n")
+	throw new Error(`\n ${l10n.t('Git commit failed, please commit manually')} \n[${step}:${kind}]${detail ? `\n${detail}` : ""}`)
+}
+
+function getGitFailureKind(step: string, result: GitCommandResult) {
+	if (result.timedOut) return "timeout"
+	if (result.errorCode === "ENOENT") return "git-not-found"
+	if (step === "push" && isGitAuthenticationFailure(result)) return "authentication"
+	if (step === "push") return "push"
+	if (step === "diff") return "status"
+	return "command"
+}
+
+function isGitAuthenticationFailure(result: GitCommandResult) {
+	const text = `${result.stderr}\n${result.stdout}`.toLowerCase()
+	return [
+		"authentication",
+		"permission denied",
+		"publickey",
+		"could not read username",
+		"could not read password",
+		"access denied",
+		"403",
+		"401"
+	].some(pattern => text.includes(pattern))
 }
 
 export function inputMsg(option: vscode.InputBoxOptions, isGit: boolean = false) {
@@ -1087,11 +1243,19 @@ export function getParentPath(filepath: string) {
 }
 
 // 对文件数组进行排序
-export function sortFiles(filesArr: any[], isNested: boolean = false) {
+export interface FileItem {
+  name: string
+  isDirectory: boolean
+  file?: FileItem
+}
+
+export function sortFiles(filesArr: FileItem[], isNested?: boolean): FileItem[]
+export function sortFiles(filesArr: any[], isNested?: boolean): any[]
+export function sortFiles(filesArr: any[], isNested: boolean = false): any[] {
 	return filesArr.sort((a, b) => {
 		// 确定是否需要访问嵌套对象中的 isDirectory 属性
-		const aDir = isNested ? a.file.isDirectory : a.isDirectory;
-		const bDir = isNested ? b.file.isDirectory : b.isDirectory;
+		const aDir = isNested ? a.file?.isDirectory ?? false : a.isDirectory;
+		const bDir = isNested ? b.file?.isDirectory ?? false : b.isDirectory;
 
 		// 首先比较是否是目录，目录排在前面
 		if (aDir && !bDir) {
@@ -1101,8 +1265,8 @@ export function sortFiles(filesArr: any[], isNested: boolean = false) {
 			return 1; // b 在前
 		}
 		// 如果都是目录或者都不是，则按 compare_key 排序
-		const aKey = isNested ? a.file['name'] : a['name'];
-		const bKey = isNested ? b.file['name'] : b['name'];
+		const aKey = isNested ? a.file?.name ?? '' : a.name;
+		const bKey = isNested ? b.file?.name ?? '' : b.name;
 		return aKey.localeCompare(bKey);
 	});
 }

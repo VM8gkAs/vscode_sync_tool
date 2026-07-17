@@ -1,4 +1,6 @@
 {
+  "SyncTools.logToFile": "Output ログをワークスペース相対ディレクトリの sync-tools.log に書き込みます。既定値は false です。",
+  "SyncTools.logDirectory": "ファイルログ用のワークスペース相対ディレクトリです。既定値は sync_logs です。絶対パスとワークスペース外のパスは拒否されます。",
   "SyncTools.title": "FTP/SFTP/SSH同期ツール",
   "SyncTools.refresh": "更新",
   "SyncTools.upload": "アップロード",

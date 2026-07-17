@@ -1,4 +1,6 @@
 {
+  "SyncTools.logToFile": "Записывать журналы Output в sync-tools.log в каталоге относительно рабочей области. По умолчанию false.",
+  "SyncTools.logDirectory": "Каталог для файлов журналов относительно рабочей области. По умолчанию sync_logs. Абсолютные пути и пути вне рабочей области отклоняются.",
   "SyncTools.title": "Инструмент синхронизации FTP/SFTP/SSH",
   "SyncTools.refresh": "Обновить",
   "SyncTools.upload": "Загрузить",

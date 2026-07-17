@@ -1,4 +1,6 @@
 {
+  "SyncTools.logToFile": "Output-Protokolle in sync-tools.log in einem arbeitsbereichsrelativen Verzeichnis schreiben. Standard ist false.",
+  "SyncTools.logDirectory": "Arbeitsbereichsrelatives Verzeichnis für Datei-Protokolle. Standard ist sync_logs. Absolute Pfade und Pfade außerhalb des Arbeitsbereichs werden abgelehnt.",
   "SyncTools.title": "FTP/SFTP/SSH-Synchronisierungstools",
   "SyncTools.refresh": "Aktualisieren",
   "SyncTools.upload": "Hochladen",
