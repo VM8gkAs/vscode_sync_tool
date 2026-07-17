@@ -2,6 +2,53 @@
 
 > 用於記錄每次版本的詳細改動，便於後續追蹤、回溯與驗證。
 
+## v0.6.3（2026-07-17）
+
+### 發行摘要
+- 完成 P0 正確性收尾、P1 型別／Git 安全邊界與 P2 效能改善，並保留 VS Code 1.82 最低執行版本。
+- Output 成功記錄不再於 queue finalize 後消失；使用者可選擇寫入工作區相對檔案 log。
+- 高延遲遠端與大型本機 workspace 的 traversal 都加入有界非同步處理，並提供可降低負載或恢復舊版序列遠端行為的設定。
+
+### 功能新增
+- **檔案 log**：新增 `SyncTools.logToFile`（預設 `false`）與 `SyncTools.logDirectory`（預設 `sync_logs`）。啟用後依 workspace append 至 `sync-tools.log`，並維持同一 workspace 的寫入順序。
+- **log 路徑邊界**：自訂目錄只能是工作區內的非空相對路徑；絕對路徑、`..` 越界與 workspace root 都會被拒絕，啟用的 log 目錄也會加入 upload ignore。
+- **本機 traversal 設定**：每個環境可設定 `localTraversalConcurrency`（1–16，預設 4）；設為 1 使用最低瞬時磁碟負載的非阻塞序列 I/O。
+- **遠端 traversal 設定**：每個環境可設定 `downloadTraversalConcurrency`（1–16，預設 2）；設為 1 會走舊版 FTP/SFTP 序列 DFS。
+
+### 正確性與安全修正
+- **Queue finalize**：successful、failed、cancelled、stopped、skipped 與 empty deployment 統一進入 config/workspace-scoped finalize；finalize 可重入但只執行一次，且成功路徑不覆蓋失敗診斷。
+- **Output retention**：成功 finalize 不再呼叫全域 log clear；Output 只在使用者執行 Clear All Log 或超過 `SyncTools.logNumberLimit` 時移除最舊記錄。
+- **Watcher ignore policy gate**：rename/move 事件會在排程與 cache 寫入前同時檢查 `oldPath`、`newPath`：未排除→已排除轉為 delete、已排除→未排除轉為 add、兩端都排除則 skip。
+- **rename/move 分類**：父目錄相同標記為 `rename`，父目錄不同標記為 `move`；底層仍使用 FTP/SFTP 相容的 remote rename，Output 依 `pathChangeType` 顯示操作類型。
+- **Multi-root scope**：config cache、queue、connection pool、watch cache、debounce、Tree node、暫存檔與 `.gitignore` cache key 都包含 workspace root，不再猜第一個 workspace。
+- **Git submit**：改用 `execFile("git", args)` 依序執行 add、staged diff、commit、push；commit message 不進入 shell 字串，並區分 no changes、authentication 與 push failure。
+- **Client retry**：client 歸還 connection pool 後立即清除本地參照，retry 無法重連時不會再次 release 同一 client。
+- **Tree refresh**：完成事件會等待 Tree node 更新後才釋放 mutex；空部署也會完成 UI／Status Bar 收尾。
+- **Windows remote path**：批次資料夾上傳的相對路徑統一使用 POSIX separator，不讓本機反斜線進入遠端 task path。
+- **發行閘門**：修正 CI lint 參數轉送，Stop Sync command 改用正確 l10n key；所有 package.nls 語系 key 已一致。
+
+### 效能與資源改善
+- **Watch cache**：建立 `newname -> source keys` 索引，並將同 config/workspace 的 50 ms burst 合併為一次 workspaceState read/update；部署、清除與 deactivate 前都有 flush barrier。
+- **本機 traversal**：`getAllFiles()` 改用 `fs.promises.lstat` 與 `readdir({ withFileTypes: true })`，保留 ignore pruning、negation restore、symlink 與穩定輸出順序。
+- **遠端 traversal**：FTP/SFTP directory discovery 使用有界並行與穩定 DFS task order；任一 list 失敗時不 enqueue 部分結果，額外 traversal lease 與 transfer 共用連線上限。
+- **Deadlock 防護**：共享 connection budget 沒有空額度時立即沿用既有 client，不等待另一個 traversal 釋放 lease。
+- **Tree cache**：node index 改為 `Map`，refresh／delete／rename／disconnect 共用 iterative subtree eviction；完成事件以 50 ms 視窗批次排序與 refresh。
+- **非阻塞清理**：Tree 暫存檔與 cache 目錄刪除改用 `fs.promises.rm`，避免同步 filesystem API 阻塞 Extension Host。
+
+### 文件與測試
+- 更新 `README.md`，說明 Output retention、檔案 log 路徑限制，以及兩個 traversal concurrency 設定的負載與回復方式。
+- 新增 `docs/watch-ignore-policy-2026-07-03.md`，保留 watcher policy matrix、rename-vs-move 定義與事件範例。
+- `docs/REPORT.md` 統一記錄 P0／P1／P2 完成證據、效能量測、殘餘風險與 P1-4／P1-5 後續工作。
+- 測試擴充至 65 個案例，涵蓋 queue 終態、retry client、empty deployment、ignore policy、file log、multi-root、watch batching、Tree eviction 與有界 traversal。
+
+### 驗證結果
+- `corepack pnpm test`：65 passing。
+- `corepack pnpm run typecheck:strict`、`check:i18n`、`lint --quiet`：通過。
+- `corepack pnpm run package`：production webpack build 通過。
+- `corepack pnpm audit --prod`：0 known vulnerabilities。
+- VS Code 1.82.0 與 Stable 1.129.0 Extension Host：exit code 0。
+- `ssh-tools-0.6.3.vsix`：使用 VSCE 3.9.2 `--no-dependencies` 建立並檢查實包。
+
 ## v0.6.2（2026-06-21）
 
 ### 改善項目
@@ -135,9 +182,9 @@
 - `.gitignore`：新增 `.vscode/`。
 
 ### 文件更新
-- `CHANGELOG.md`：合併 v0.6.1~v0.6.3 為 v0.6.1。
-- `docs/i18n/CHANGELOG.zh-TW.md`：合併 v0.6.1~v0.6.3 為 v0.6.1。
-- `docs/i18n/CHANGELOG_DETAIL.zh-TW.md`：合併 v0.6.1~v0.6.3 為 v0.6.1 詳細追蹤。
+- `CHANGELOG.md`：將當時尚未發布的版本草稿合併為 v0.6.1。
+- `docs/i18n/CHANGELOG.zh-TW.md`：將當時尚未發布的版本草稿合併為 v0.6.1。
+- `docs/i18n/CHANGELOG_DETAIL.zh-TW.md`：將當時尚未發布的版本草稿合併為 v0.6.1 詳細追蹤。
 - `CHANGELOG.en.md`：已刪除（內容併入 `CHANGELOG.md`）。
 - `README.md`：設定範例更新 `skipIfSame` + `skipCompareMode`。
 - 版本號更新為 `0.6.1`（package.json）。

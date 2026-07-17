@@ -50,6 +50,18 @@
 3. Proxy Settings. The proxy will only take effect if you also set `proxy = true` in the project configuration below.
    ![](https://cdn.jsdelivr.net/gh/oorzc/public_img@main/img/2024%2F11%2F12%2F9f00f0451dd2c558ad469178d0058713.png)
 
+4. Output Logs
+
+    - Output history remains available until you run **Sync Tools: Clear All Log**. The newest entries are retained according to `SyncTools.logNumberLimit`.
+    - To persist the same information to disk, add these workspace settings:
+
+      ```jsonc
+      "SyncTools.logToFile": true,
+      "SyncTools.logDirectory": "sync_logs"
+      ```
+
+    - Logs are appended to `<workspace>/<logDirectory>/sync-tools.log`. The directory must be relative to the workspace and is excluded from synchronization while file logging is enabled.
+
 ### sync_config.jsonc Configuration Reference
 
 ```jsonc
@@ -85,6 +97,8 @@
         "excludePath": [], // (Optional) Files and directories to be excluded from upload in the current environment. It will be merged with the plugin's excludePath configuration. When the plugin uses gitignore, it will be merged with the .gitignore configuration file
         // "downloadPath": "" // (Optional) Download path. Default is the current project root directory. Used when manually downloading files or folders. You can specify a download address
         // "downloadExcludePath": [], //  (Optional) Files and directories to be excluded from download
+        "localTraversalConcurrency": 4, // Local directory scan concurrency (1-16). Use 1 for serial asynchronous I/O and the lowest instantaneous disk load. Default is 4
+        "downloadTraversalConcurrency": 2, // Remote download directory scan concurrency (1-16). Use 1 to restore the previous serial traversal behavior. Default is 2
         "default": true // Whether it's the default environment. When set to true, you can use the right-click menu to quickly upload files or folders and compare with remote files. Default is false
     },
     "online": {
@@ -116,6 +130,14 @@
     }
 }
 ```
+
+### Traversal Performance Controls
+
+- `localTraversalConcurrency` and `downloadTraversalConcurrency` belong to each environment in `sync_config.jsonc`, so a low-capacity server can use different limits from another server.
+- `localTraversalConcurrency: 1` uses serial, non-blocking local I/O and minimizes instantaneous disk load. The default `4` overlaps a small number of directory reads without changing file order or ignore rules.
+- `downloadTraversalConcurrency: 1` restores the previous FTP/SFTP serial directory traversal. Values above `1` can reduce high-latency folder discovery time, but increase simultaneous remote requests, connection use, and network activity. The default is `2`.
+- Remote traversal and file transfers share the `SyncTools.uploadConcurrentLimit` connection budget. The effective traversal concurrency never exceeds that global limit, and automatically falls back to fewer clients when no spare lease is available.
+- A remote directory-listing failure aborts that discovery batch before any partial download tasks are queued.
 
 ### Authentication Priority & Validation Errors
 

@@ -5,6 +5,37 @@
 - [繁體中文](docs/i18n/CHANGELOG.zh-TW.md)
 - [詳細變更追蹤（繁體中文）](docs/i18n/CHANGELOG_DETAIL.zh-TW.md)
 
+## v0.6.3 (2026-07-17)
+
+### Added
+- Added focused regression coverage for queue terminal states, multi-root scope isolation, Git argument safety, retry connection cleanup, and empty deployment finalization.
+- Added optional workspace-scoped file logging through `SyncTools.logToFile` and `SyncTools.logDirectory`; enabled logs append to `sync-tools.log` under `sync_logs` by default.
+- Added per-environment `localTraversalConcurrency` (default `4`) and `downloadTraversalConcurrency` (default `2`) settings to `sync_config.jsonc`; remote traversal can be restored to the previous serial behavior by setting it to `1`.
+- Added watcher ignore-policy tests for moves into and out of ignored paths, rename-vs-move classification, and the policy record in `docs/watch-ignore-policy-2026-07-03.md`.
+
+### Improved
+- Scoped configuration caches, queues, connection pools, watcher state, Tree nodes, upload debounce keys, and temporary remote-file caches by workspace.
+- Replaced loose queue, watcher, event, and FTP/SFTP client values with explicit TypeScript unions and client boundaries.
+- Replaced shell-composed Git submission with fixed `execFile("git", args)` steps and structured failure classification.
+- Unified successful, failed, cancelled, stopped, skipped, and empty deployment paths through config-scoped finalization.
+- Kept the newest Output entries up to `SyncTools.logNumberLimit`, and excluded the enabled file-log directory from synchronization.
+- Replaced blocking local directory scans with ordered, ignore-aware, bounded asynchronous I/O.
+- Indexed watcher rename targets and batched burst persistence so each config/workspace performs one state read/write per batch.
+- Added bounded FTP/SFTP directory discovery with stable task order, atomic discovery failure, and a connection budget shared with file transfers.
+- Batched Tree completion refreshes, replaced the node index with a `Map`, unified subtree eviction, and moved cache deletion off synchronous filesystem APIs.
+- Classified watcher path changes as `rename` when the parent directory is unchanged and `move` when it changes, while retaining the protocol-compatible remote rename operation.
+
+### Fixed
+- Restored awaited Tree refresh handling so the refresh mutex remains held until node updates complete.
+- Prevented a released client from being returned to the connection pool again when a retry cannot reconnect.
+- Finalized deployments that enqueue no transfer tasks instead of leaving the Tree View in a busy state.
+- Corrected the Stop Sync command to use its own localized title instead of the Pause Sync title.
+- Corrected the pnpm lint argument forwarding used by CI.
+- Prevented successful queue finalization from clearing Output history; logs now remain until the explicit Clear All Log command or the configured entry limit removes the oldest records.
+- Prevented watcher rename/move events from bypassing destination exclude rules; moves into ignored paths now delete the old remote path, moves out become uploads, and ignored-to-ignored moves are skipped.
+- Prevented concurrent folder traversals from deadlocking while waiting for extra connections; traversal immediately falls back to its existing client when the shared budget has no spare lease.
+- Normalized bulk folder-upload relative paths to POSIX separators so Windows paths cannot introduce backslashes into remote task paths.
+
 ## v0.6.2
 
 ### Improved

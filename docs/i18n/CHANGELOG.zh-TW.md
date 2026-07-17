@@ -1,5 +1,35 @@
 # 更新日誌
 
+## v0.6.3（2026-07-17）
+
+### 新增
+- 新增 queue 終態、multi-root scope 隔離、Git 參數安全、retry 連線清理與空部署 finalize 的聚焦回歸測試。
+- 新增 `SyncTools.logToFile` 與 `SyncTools.logDirectory`；啟用後預設將 Output 內容追加寫入 `<workspace>/sync_logs/sync-tools.log`。
+- 新增每環境的 `localTraversalConcurrency`（預設 4）與 `downloadTraversalConcurrency`（預設 2）；遠端 traversal 設為 1 可恢復舊版序列行為。
+- 新增 watcher 移入／移出 ignored path、rename-vs-move 分類測試，以及 `docs/watch-ignore-policy-2026-07-03.md` policy 紀錄。
+
+### 改善
+- config cache、queue、connection pool、watcher state、Tree node、upload debounce 與遠端暫存檔全部納入 workspace scope。
+- queue、watcher、event 與 FTP/SFTP client 邊界改用明確 TypeScript union／interface。
+- Git submit 改用固定的 `execFile("git", args)` 步驟與結構化錯誤分類，不再組合 shell command。
+- successful、failed、cancelled、stopped、skipped 與 empty deployment 統一經過 config-scoped finalize。
+- Output 只保留最新 `SyncTools.logNumberLimit` 筆；啟用檔案 log 時會自動排除該目錄，避免同步自己的 log。
+- 本機 traversal 改為保序、ignore-aware 的有界非同步 I/O，不再以同步 filesystem API 阻塞 Extension Host。
+- watcher rename target 改用索引，並批次合併 burst persistence；每個 config／workspace 每批只讀寫一次 state。
+- FTP/SFTP 目錄 discovery 改為有界並行、穩定 task order、整批失敗，並與 file transfer 共用連線額度。
+- Tree 完成事件改為批次 refresh，node index 改用 `Map` 並統一 subtree eviction；cache 刪除移出同步 filesystem API。
+- watcher 同父目錄路徑變更標記為 `rename`、跨父目錄標記為 `move`，底層仍使用相容 FTP/SFTP 的遠端 rename 操作。
+
+### 修正
+- 等待 Tree refresh 完成後才釋放 mutex，避免 node 尚未更新就進入下一批事件。
+- retry 重新連線失敗時不再把已歸還的 client 重複放回 connection pool。
+- 空部署也會進入 completed finalize，不再讓 Tree View 停留在 busy。
+- Stop Sync command 改用自己的 l10n title；CI 的 pnpm lint 參數也改為有效的 error gate。
+- 成功 finalize 不再清除 Output；記錄只會由 Clear All Log 或數量上限移除。
+- watcher rename/move 同時檢查 old/new path；移入 ignored path 會刪除舊遠端路徑，移出會轉為 upload，兩端都 ignored 則跳過。
+- 遠端 traversal 無額外 connection lease 時立即沿用現有 client，避免多個 traversal 互相等待形成 deadlock。
+- Windows 批次資料夾上傳的相對遠端路徑統一為 POSIX separator，避免反斜線進入 remote task path。
+
 ## v0.6.2
 
 ### 改善
