@@ -14,6 +14,9 @@
 - Added watcher ignore-policy tests for moves into and out of ignored paths, rename-vs-move classification, and the policy record in `docs/watch-ignore-policy-2026-07-03.md`.
 
 ### Improved
+- Completed P1 localization and trust boundaries: runtime messages now use the VS Code localization API, build terminology is consistent, and the i18n gate also detects source strings missing from the base bundle.
+- Replaced async Promise executors in deployment finalization and ignore configuration loading with direct async functions so cancellation and cache errors settle predictably.
+- Reduced high-frequency internal transfer, connection-pool, and watcher debug logging while retaining localized user diagnostics and structured technical error tags.
 - Scoped configuration caches, queues, connection pools, watcher state, Tree nodes, upload debounce keys, and temporary remote-file caches by workspace.
 - Replaced loose queue, watcher, event, and FTP/SFTP client values with explicit TypeScript unions and client boundaries.
 - Replaced shell-composed Git submission with fixed `execFile("git", args)` steps and structured failure classification.
@@ -26,6 +29,14 @@
 - Classified watcher path changes as `rename` when the parent directory is unchanged and `move` when it changes, while retaining the protocol-compatible remote rename operation.
 
 ### Fixed
+- Prevented untrusted workspaces from executing `config.build`; users can open Workspace Trust management and retry synchronization after granting trust.
+- Preserved the `cancelled` deployment terminal state instead of allowing direct-async error propagation to overwrite it as `failed`.
+- Preserved each child file's workspace-relative suffix when a watched directory is uploaded, preventing SFTP `fastPut` from receiving the parent directory (for example `/volumes/html/wordcloud/lib`) as a file destination.
+- Overrode the vulnerable `socks` transitive dependency `ip-address` with 10.3.1 after the August 2026 advisories; production audit is back to zero known vulnerabilities.
+- Treated trailing globstar exclusions such as `tools/**` as matching both the `tools` directory root and all descendants, preventing parent-directory watcher events from entering the upload queue.
+- Skipped obsolete upload tasks when their local source was renamed or removed, before opening a connection or creating a remote parent directory; this prevents ENOENT retry loops and duplicate old directories after a folder rename.
+- Ignored transient watcher change events whose local path disappeared before `lstat`, instead of surfacing an ENOENT error.
+- Overrode vulnerable `brace-expansion` transitive versions with 5.0.9 after the July 2026 advisories; production audit is back to zero known vulnerabilities without changing the VS Code 1.82 minimum.
 - Restored awaited Tree refresh handling so the refresh mutex remains held until node updates complete.
 - Prevented a released client from being returned to the connection pool again when a retry cannot reconnect.
 - Finalized deployments that enqueue no transfer tasks instead of leaving the Tree View in a busy state.

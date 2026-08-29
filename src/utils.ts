@@ -186,7 +186,8 @@ export function createPathIgnoreMatcher(ignoreArr: string[] = [], rootPath: stri
 		}
 		let ignored = false;
 		for (const rule of rules) {
-			if (rule.matcher.match(normalizedPath) || rule.childMatcher.match(normalizedPath)) {
+			const matchesGlobRoot = rule.pattern.endsWith("/**") && normalizedPath === rule.literalPrefix;
+			if (matchesGlobRoot || rule.matcher.match(normalizedPath) || rule.childMatcher.match(normalizedPath)) {
 				ignored = !rule.negated;
 			}
 		}
@@ -472,14 +473,14 @@ export const resolveWatchChangeForIgnore = async (
 	return { file, opType: { ...opTypeValue, pathChangeType } }
 }
 
-export const getIgnoreConfig = (
+export const getIgnoreConfig = async (
 	config: FileTransferConfigItem,
 	file: string = "",
 	_view: boolean = false
-) => {
+): Promise<string[]> => {
 	let context = getContext()
 	let rootPath = config.workspaceRoot || getRootPath(file)
-	if (!rootPath) return Promise.resolve<string[]>([])
+	if (!rootPath) return []
 
 	let name = config.name
 	//获取插件配置
@@ -488,72 +489,70 @@ export const getIgnoreConfig = (
 
 	const useGitignore = syncConfig.get<boolean>("gitignore")
 
-	return new Promise<string[]>(async (resolve, reject) => {
-		// 获取 workspaceState 对象
-		const workspaceState = context.workspaceState
-		const ignoreCacheKey = getWorkspaceStateKey("ignore_config", rootPath, name)
-		const value = workspaceState.get(ignoreCacheKey)
-		let ignore_arr: string[] = []
-		let ignore_temp: string[] = []
+	// 获取 workspaceState 对象
+	const workspaceState = context.workspaceState
+	const ignoreCacheKey = getWorkspaceStateKey("ignore_config", rootPath, name)
+	const value = workspaceState.get(ignoreCacheKey)
+	let ignore_arr: string[] = []
+	let ignore_temp: string[] = []
 
-		//默认忽略配置
-		if (Array.isArray(excludePath)) {
-			ignore_temp = [...ignore_temp, ...excludePath]
+	//默认忽略配置
+	if (Array.isArray(excludePath)) {
+		ignore_temp = [...ignore_temp, ...excludePath]
+	}
+
+	//用户忽略配置
+	if (config.excludePath) {
+		if (Array.isArray(config.excludePath)) {
+			ignore_temp = [...ignore_temp, ...config.excludePath]
+		} else {
+			ignore_temp = [...ignore_temp, ...config.excludePath.split(",")]
 		}
+	}
 
-		//用户忽略配置
-		if (config.excludePath) {
-			if (Array.isArray(config.excludePath)) {
-				ignore_temp = [...ignore_temp, ...config.excludePath]
-			} else {
-				ignore_temp = [...ignore_temp, ...config.excludePath.split(",")]
+	if (syncConfig.get<boolean>("logToFile", false)) {
+		const configuredDirectory = syncConfig.get<string>("logDirectory", DEFAULT_SYNC_LOG_DIRECTORY)
+		const logDirectory = resolveSyncLogDirectory(rootPath, configuredDirectory)
+		if (logDirectory) {
+			ignore_temp.push(getNormalPath(path.relative(rootPath, logDirectory)))
+		}
+	}
+
+
+	if (useGitignore) {
+		//  存在配置则使用配置，减少读写文件开销
+		if (value && Array.isArray(value)) {
+			ignore_temp = [...ignore_temp, ...value]
+		} else {
+			let gitignorePath = path.join(rootPath, ".gitignore")
+			let data = ""
+			if (fs.existsSync(gitignorePath)) {
+				data = fs.readFileSync(gitignorePath, "utf-8")
+				// 去除注释并将结果转换为数组
+				let new_data = data
+					.split("\n")
+					.map((line: string) => line.trim())
+					.filter((line: string) => line && !line.startsWith("#"))
+				ignore_temp = [...ignore_temp, ...new_data]
+
+				//  更新配置
+				await workspaceState.update(ignoreCacheKey, new_data)
 			}
 		}
+	}
 
-		if (syncConfig.get<boolean>("logToFile", false)) {
-			const configuredDirectory = syncConfig.get<string>("logDirectory", DEFAULT_SYNC_LOG_DIRECTORY)
-			const logDirectory = resolveSyncLogDirectory(rootPath, configuredDirectory)
-			if (logDirectory) {
-				ignore_temp.push(getNormalPath(path.relative(rootPath, logDirectory)))
-			}
-		}
-
-
-		if (useGitignore) {
-			//  存在配置则使用配置，减少读写文件开销
-			if (value && Array.isArray(value)) {
-				ignore_temp = [...ignore_temp, ...value]
-			} else {
-				let gitignorePath = path.join(rootPath, ".gitignore")
-				let data = ""
-				if (fs.existsSync(gitignorePath)) {
-					data = fs.readFileSync(gitignorePath, "utf-8")
-					// 去除注释并将结果转换为数组
-					let new_data = data
-						.split("\n")
-						.map((line: string) => line.trim())
-						.filter((line: string) => line && !line.startsWith("#"))
-					ignore_temp = [...ignore_temp, ...new_data]
-
-					//  更新配置
-					await workspaceState.update(ignoreCacheKey, new_data)
-				}
-			}
-		}
-
-		ignore_temp.forEach((v) => {
-			// 重写规则
-			ignore_arr.push(v)
-			ignore_arr.push(path.join(v, "**"))
-		})
-
-		//数组去重
-		ignore_arr = [...new Set(ignore_arr)]
-		if (!ignore_arr.includes("sync_config.jsonc")) {
-			ignore_arr.push("sync_config.jsonc")
-		}
-		resolve(ignore_arr)
+	ignore_temp.forEach((v) => {
+		// 重写规则
+		ignore_arr.push(v)
+		ignore_arr.push(path.join(v, "**"))
 	})
+
+	//数组去重
+	ignore_arr = [...new Set(ignore_arr)]
+	if (!ignore_arr.includes("sync_config.jsonc")) {
+		ignore_arr.push("sync_config.jsonc")
+	}
+	return ignore_arr
 }
 
 //将配置转化为数组
@@ -573,7 +572,7 @@ function parseSyncConfigRecord(jsonText: string): SyncConfigRecord {
 	const config: SyncConfigRecord = {}
 	for (const [key, value] of Object.entries(parsed)) {
 		if (!isObjectRecord(value)) {
-			throw new Error(`Invalid sync config entry: ${key}`)
+			throw new Error(`${l10n.t('sync_config.jsonc configuration file format error!')} [${key}]`)
 		}
 		config[key] = value
 	}
@@ -813,7 +812,6 @@ export async function addConfig(rootPath: string) {
 		//打开配置文件
 		vscode.workspace.openTextDocument(filepath).then((document) => {
 			vscode.window.showTextDocument(document).then(() => {
-				// vscode.window.showInformationMessage(l10n.t('已创建配置文件：sync_config.jsonc'));
 			})
 		})
 

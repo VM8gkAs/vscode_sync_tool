@@ -68,7 +68,7 @@ export const uploadOnSave = async (
 				break
 		}
 	} catch (err) {
-		let msg = `[${config.name}][${config.type}][上传失败]`;
+		let msg = `[${config.name}][${config.type}][${vscode.l10n.t('Upload failed')}]`;
 		vscode.window.showErrorMessage(`${msg}：${err?.toString()}`)
 	}
 

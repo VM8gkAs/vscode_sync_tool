@@ -1,6 +1,6 @@
 # vscode_sync_tool 程式改進路線圖
 
-> 最後更新：2026-07-17
+> 最後更新：2026-08-30
 > 本文件是專案唯一持續更新的改進目標與優先順序總覽。歷史效能分析保留於 [2026-05-25 Complexity Report](archive/complexity-report-2026-05-25.md)。
 
 ## 文件重點
@@ -11,24 +11,27 @@
 - 2026-07-13 修正成功收尾後 Output 記錄短暫出現即消失；記錄改為只由明確命令或數量上限清除，並新增可選的工作區相對檔案 log。
 - 2026-07-17 完成 P2 效能改善：watch cache 索引與批次持久化、可回復序列行為的遠端有界 traversal、Tree subtree eviction／批次 refresh，以及非阻塞本機 traversal。
 - 2026-07-17 完成 v0.6.3 發行核對：版本紀錄已統一，65 tests、完整 CI 同級閘門、VS Code 1.82／Stable 1.129 Extension Host 與 VSIX 實包均通過。
-- 下一步優先處理 P1-4 i18n/l10n 一致性與 P1-5 Workspace Trust／非同步邊界。
+- 2026-07-31 依實機測試修正 `tools/**` 目錄根漏接與資料夾新增後立即改名的 stale upload；失效任務不再重試或先建立舊遠端目錄，並完成新公告依賴漏洞修補與完整閘門。
+- 2026-08-30 修正 watch 資料夾待辦展開後重用父目錄遠端路徑的問題；每個子檔現在都保留完整 workspace-relative suffix。
+- 2026-08-30 完成 P1-4／P1-5：核心訊息與 Build 術語已統一，untrusted workspace 不會執行 `config.build`，async Promise executor 已移除並補齊聚焦測試。
+- 下一步先完成經審查的 upstream 功能整合，再依序處理 P3。
 - 目前不追最新版工具鏈；build baseline 維持 Node 22、pnpm 10、VS Code `^1.82.0`。
 
 ## 開發項目核對表
 
-> 核對日期：2026-07-17。狀態依目前程式碼、測試、設定與 CI 檔案確認。
+> 核對日期：2026-08-30。狀態依目前程式碼、測試、設定與 CI 檔案確認。
 
 | 狀態 | 項目 | 核對結果 |
 | --- | --- | --- |
-| ✅ | P0-1 任務終態、cache 與診斷記錄 | queue `drain`、失敗、取消、停止、skip 與空部署已統一進入 config-scoped finalize；成功 finalize 不再清除 Output，檔案 log 具 workspace scope 與路徑邊界。 |
-| ✅ | P0-2 上下載與 watcher ignore 語意 | 上下載共用 compiled matcher；FTP/SFTP 在 list 子目錄前 pruning；watcher rename/move 會同時檢查 old/new path，避免移入 ignored path 時錯誤 rename/upload。 |
+| ✅ | P0-1 任務終態、cache 與診斷記錄 | queue `drain`、失敗、取消、停止、skip 與空部署已統一進入 config-scoped finalize；stale upload 在遠端 mutation 前結束；watch 資料夾展開保留子檔遠端路徑；成功 finalize 不再清除 Output，檔案 log 具 workspace scope 與路徑邊界。 |
+| ✅ | P0-2 上下載與 watcher ignore 語意 | 上下載共用 compiled matcher；`tools/**` 同時涵蓋目錄根與 descendants；FTP/SFTP 在 list 子目錄前 pruning；watcher rename/move 會同時檢查 old/new path。 |
 | ✅ | P0-3 Multi-root workspace | workspace root 已納入 config、queue、connection pool、watch cache、debounce、Tree node 與暫存檔 scope。 |
 | ✅ | P0-4 CI 與發布閘門 | GitHub Actions 已執行安裝、翻譯檢查、測試、strict typecheck、lint、production build、audit 與 VSIX 實包；pnpm lint 參數已修正為有效 gate。 |
 | ✅ | P1-1 Queue／事件／設定模型 | `Task.operationType`、watch `opType` 與 `myEvent` payload 已收斂為 discriminated union；config raw/default normalization 與 runtime `workspaceRoot` 注入已分離。 |
 | ✅ | P1-2 Client 型別邊界 | `FileTransfer.ts`、`treeProvider.ts` 與 `deploy.ts` 已不再以 `client: any` 傳遞核心操作；FTP/SFTP client、connection pool、遠端 list item 與 progress callback 已具體型別化。 |
 | ✅ | P1-3 Git 子程序安全 | Git submit 已改用 `execFile("git", args)` 與固定步驟 `add`／`diff --cached --quiet`／`commit`／`push`；commit message 不再進入 shell 字串，no changes 與 push/auth failure 有聚焦測試。 |
-| 🟡 | P1-4 i18n/l10n 一致性 | 所有語系 key 已一致並納入 CI；核心流程仍有硬編碼中英文 log。 |
-| 🟡 | P1-5 Workspace Trust／非同步邊界 | `config.build` 仍可執行 workspace 提供的 shell command；`Deploy.start()` 與 `getIgnoreConfig()` 仍使用 async Promise executor，需另案收斂信任與錯誤傳遞。 |
+| ✅ | P1-4 i18n/l10n 一致性 | package/runtime 語系 key 與原始碼引用均納入 CI；核心訊息已改用 l10n，Build 術語一致，高頻重複 debug log 已移除。 |
+| ✅ | P1-5 Workspace Trust／非同步邊界 | untrusted workspace 不會執行 `config.build`；`Deploy.start()` 與 `getIgnoreConfig()` 已改為直接 async function，並覆蓋 build、提示取消、Deploy 取消與 cache 錯誤測試。 |
 | ✅ | P2-1 Watch rename 索引 | 以 `newname -> source keys` 索引處理 rename chain，50 ms burst 內只讀寫一次 workspaceState；清除、部署與停用前都有 flush barrier。 |
 | ✅ | P2-2 有界並行下載 traversal | 每份 `sync_config.jsonc` 可設定 `downloadTraversalConcurrency`；預設 2，設為 1 可恢復舊版序列 traversal，並與 transfer 共用全域連線額度。 |
 | ✅ | P2-3 Tree cache 生命週期 | `allNodes` 已改為 `Map` 與統一 subtree eviction；refresh／delete／rename／disconnect 不再留下失效索引，完成事件以 50 ms 批次更新。 |
@@ -64,7 +67,7 @@ P2 處理結果（原審查項目）：
 | 2 | `src/utils.ts` `getAllFiles()` 使用同步 `readdirSync`／`lstatSync`，且同一 entry 可能重複 stat。 | 總工作量 `O(F)`，但會阻塞 Extension Host。 | ✅ 已改為 `fs.promises`／`Dirent` 與有界 I/O；1k／10k／50k fixture 均驗證集合與 event-loop delay。 |
 | 3 | `src/treeProvider.ts` 同時由 `children` 與 `allNodes` 持有節點，subtree invalidation 分散。 | lookup 近似 `O(1)`，但 subtree 清理為 `O(N)` 且 retained memory 隨展開節點增加。 | ✅ 已改為 `Map` 與統一 eviction；10k fixture 淘汰後索引由 10,001 回到 1。 |
 | 4 | `src/FileTransfer.ts` FTP/SFTP 下載 traversal 採序列 DFS。 | 工作量 `O(D + F)`；wall-clock 受每層遠端 list latency 線性累積。 | ✅ 已加入 per-config 有界 traversal、共享連線額度與整批失敗語意；設定 1 可完整返回舊序列路徑。 |
-| 5 | `src/deploy.ts`／`src/utils.ts` 非同步 executor 與 workspace command 邊界。 | 不是演算法瓶頸，但錯誤傳遞與不受信任 workspace 的 command 執行風險較難審計。 | P1-5 改為直接 async function，並定義 Workspace Trust／明確確認策略；補取消、throw 與 untrusted workspace 測試。 |
+| 5 | `src/deploy.ts`／`src/utils.ts` 非同步 executor 與 workspace command 邊界。 | 不是演算法瓶頸，但錯誤傳遞與不受信任 workspace 的 command 執行風險較難審計。 | ✅ 已改為直接 async function；untrusted workspace 禁止 build，並覆蓋取消、throw、cache 錯誤與 build 測試。 |
 
 掃描說明：complexity scanner 僅作候選清單；`.vscode-test`、`src/lib` 與生成物已排除，最終排序依實際 hot path、目前測試與人工 diff 審查判定。
 
@@ -84,10 +87,13 @@ P2 處理結果（原審查項目）：
 
 - 技術：TypeScript、VS Code Extension API、Webpack；build／CI 使用 Node 22 與 pnpm 10，擴充套件執行期最低為 VS Code 1.82／Node 18。
 - 正式版本：`0.6.3`；後續 VSIX 重建應產生 `ssh-tools-0.6.3.vsix`，不得再以 `0.6.2` 覆蓋新改動。
-- 測試：Mocha，現有 65 個聚焦測試。
+- 測試：Mocha，現有 75 個聚焦測試。
 - 發布入口：`dist/extension.js`，VSIX 使用 `--no-dependencies` 打包。
 - 正式依賴安全稽核：0 vulnerabilities。
 - 最近驗證：
+  - 2026-08-30 P1 完成與 v0.6.3 重建：75 passing、strict typecheck、source-aware i18n、lint error gate、production build、production audit（0 vulnerabilities）、VS Code 1.82／Stable 1.135.0 Extension Host 與 VSIX 實包（58 files、2.37 MiB）均通過；SHA-256 `F3F6438100AD1DF9A5B610171F9089567DF43B6BC450F476C729CE54EBED3DB9`。
+  - 2026-08-30 watch 資料夾上傳路徑修正：69 passing、strict typecheck、i18n、lint error gate、production build、production audit（0 vulnerabilities）、VS Code 1.82／Stable 1.135.0 Extension Host 與 VSIX 實包（58 files、2.34 MiB）均通過。
+  - 2026-07-31 v0.6.3 實測回歸修正：68 passing、strict typecheck、i18n、lint error gate、production build、production audit（0 vulnerabilities）、VS Code 1.82／Stable 1.131.0 Extension Host 與 VSIX 實包（58 files、2.32 MiB）均通過。
   - 2026-07-17 v0.6.3 正式發行閘門：65 passing、strict typecheck、i18n、lint、production build、production audit（0 vulnerabilities）、VS Code 1.82／Stable 1.129.0 Extension Host 與 `ssh-tools-0.6.3.vsix` 實包均通過。
   - 2026-07-13 Output retention／file log：51 passing、strict typecheck、i18n、lint、production build 與 package JSON 檢查均通過。
   - 2026-07-10 P2 前完整閘門：45 passing、strict typecheck、i18n、lint、production build、production audit（0 vulnerabilities）、VS Code 1.82／Stable 1.128.0 Extension Host 與 VSIX 實包均通過。
@@ -321,49 +327,49 @@ watcher ignore policy：
 
 ### P1-4 完成 i18n/l10n 一致性
 
-狀態：🟡 部分完成。
+狀態：✅ 已完成（2026-08-30）。
 
 現況：
 
 - `package.nls.*.json` 與基準檔案 key 一致。
 - 所有 runtime l10n 語系與基準 key 一致，過時的額外 key 已移除。
-- `scripts/check-i18n.mjs` 會檢查語系集合、缺少 key 與額外 key，並已納入 CI。
-- 核心流程仍有硬編碼中文與英文 log。
+- `scripts/check-i18n.mjs` 會檢查語系集合、缺少／額外 key，以及原始碼 literal l10n key 是否存在於基準 bundle，並已納入 CI。
+- 核心使用者訊息已改用 l10n；Build／建置術語一致，高頻重複 debug／progress log 已移除，技術診斷使用固定結構化標籤。
 
-改進：
+完成證據：
 
-- 移除核心流程中的硬編碼中文／英文 log 與錯誤訊息。
-- 文件、設定範本與 runtime 文案使用一致名稱。
+- 12 份 localized runtime bundle 與基準檔案 key 一致，新增 Workspace Trust、build 與 upload error 翻譯。
+- `check:i18n`、strict typecheck、lint error gate 與 75 tests 已通過。
 
 完成條件：
 
 - CI 能偵測缺少或多餘 translation key。
 - 13 個支援語系不缺 package 與 runtime 必要字串。
 
-風險：低。
+風險：已收斂。
 
 ### P1-5 收斂 Workspace Trust 與非同步錯誤邊界
 
-狀態：🟡 部分完成。
+狀態：✅ 已完成（2026-08-30）。
 
 現況：
 
 - Git submit 已使用固定參數與非 shell 執行，該路徑已收斂。
-- `config.build` 是 workspace 設定提供的任意 shell command，目前只會在使用者主動開始同步時執行，但尚未定義 untrusted workspace 的限制或確認流程。
-- `Deploy.start()` 與 `getIgnoreConfig()` 仍使用 async Promise executor；目前主要路徑有 try/catch，但後續修改較容易產生 outer Promise 無法 settled 的錯誤。
+- `config.build` 只允許 trusted workspace 執行；untrusted workspace 會提示開啟 Workspace Trust 管理並要求信任後重試。
+- `Deploy.start()` 與 `getIgnoreConfig()` 已改為直接 async function，取消與錯誤不再受 outer Promise executor 影響。
 - SSH `unzip` 的遠端 path quoting 另由 P3-3 追蹤。
 
-改進：
+完成證據：
 
-- 明確宣告並實作 Workspace Trust 策略；untrusted workspace 不執行 `config.build`，必要時提示使用者信任後再重試。
-- 將 async Promise executor 改為直接 async function，維持目前 resolve／reject、取消與錯誤顯示語意。
+- 聚焦測試覆蓋 build success／failure、untrusted prompt cancellation、Deploy cancellation 與 ignore cache read/write failure。
+- Deploy 取消會保留 `cancelled` 終態，不被 failure finalize 覆寫。
 
 完成條件：
 
 - untrusted workspace 無法觸發本地 shell command。
 - build success／failure、prompt cancellation、Deploy cancellation 與 ignore cache 讀寫錯誤均有聚焦測試。
 
-風險：中。
+風險：已收斂；SSH unzip path quoting 仍由 P3-3 追蹤。
 
 ## P2：效能與擴展性
 

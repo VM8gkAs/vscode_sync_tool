@@ -528,3 +528,60 @@ describe('FileTransfer.checkExistFolder', () => {
 		assert.deepStrictEqual(queuedTasks.map(task => task.remotePath), ['/remote/folder/nested/file.txt']);
 	});
 });
+
+describe('Deploy watch folder upload paths', () => {
+	let FileTransfer: any;
+	let Deploy: any;
+	let workspaceRoot: string;
+
+	before(function () {
+		this.timeout(10000);
+		FileTransfer = require('../src/FileTransfer').default;
+		Deploy = require('../src/deploy').Deploy;
+		require('../src/config/globals').setContext(vscodeMockExtensionContext);
+	});
+
+	beforeEach(() => {
+		workspaceRoot = fs.mkdtempSync(path.join(os.tmpdir(), 'sync-deploy-folder-'));
+		resetVscodeMock(workspaceRoot);
+	});
+
+	afterEach(() => {
+		fs.rmSync(workspaceRoot, { recursive: true, force: true });
+		resetVscodeMock('C:\\workspace');
+	});
+
+	it('appends each child file path when a watched directory is pending upload', async () => {
+		const localFolder = path.join(workspaceRoot, 'html', 'wordcloud', 'lib');
+		const localFile = path.join(localFolder, 'pocketbase.umd.js');
+		fs.mkdirSync(localFolder, { recursive: true });
+		fs.writeFileSync(localFile, 'content');
+		const config: any = {
+			name: 'CWISELab',
+			type: 'sftp',
+			remotePath: '/volumes',
+			distPath: [],
+			upload_to_root: false,
+			workspaceRoot
+		};
+		const deploy = Object.create(Deploy.prototype);
+		deploy.config = config;
+		deploy.rootPath = workspaceRoot;
+		const originalAddTask = FileTransfer.addTask;
+		const queuedTasks: any[] = [];
+		FileTransfer.addTask = async (task: any) => queuedTasks.push(task);
+
+		try {
+			await deploy.uploadFile({
+				file: localFolder,
+				opType: { op: 'add', type: 'directory' }
+			});
+		} finally {
+			FileTransfer.addTask = originalAddTask;
+		}
+
+		assert.deepStrictEqual(queuedTasks.map(task => task.remotePath), [
+			'/volumes/html/wordcloud/lib/pocketbase.umd.js'
+		]);
+	});
+});

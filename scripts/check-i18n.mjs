@@ -28,6 +28,35 @@ async function collectFiles(directory, pattern) {
 		.map(file => path.join(directory, file));
 }
 
+async function collectFilesRecursive(directory, pattern) {
+	const entries = await readdir(path.join(projectRoot, directory), { withFileTypes: true });
+	const files = await Promise.all(entries.map(entry => {
+		const relativePath = path.join(directory, entry.name);
+		return entry.isDirectory()
+			? collectFilesRecursive(relativePath, pattern)
+			: Promise.resolve(pattern.test(entry.name) ? [relativePath] : []);
+	}));
+	return files.flat().sort();
+}
+
+async function findMissingRuntimeSourceKeys(baseFile) {
+	const baseKeys = new Set(Object.keys(await readJson(baseFile)));
+	const sourceFiles = await collectFilesRecursive('src', /\.ts$/);
+	const missing = new Set();
+
+	for (const file of sourceFiles) {
+		const source = await readFile(path.join(projectRoot, file), 'utf8');
+		const keyPattern = /(?:vscode\.)?l10n\.t\(\s*(['"])(.*?)\1/g;
+		for (const match of source.matchAll(keyPattern)) {
+			if (!baseKeys.has(match[2])) {
+				missing.add(`${match[2]} (${file})`);
+			}
+		}
+	}
+
+	return [...missing].sort();
+}
+
 function localeFromFile(file) {
 	const match = path.basename(file).match(/^(?:package\.nls|bundle\.l10n)\.(.+)\.json$/);
 	return match?.[1];
@@ -72,6 +101,13 @@ if (packageLocales.join('\n') !== runtimeLocales.join('\n')) {
 
 failed = await checkGroup('Package translations', 'package.nls.json', packageFiles) || failed;
 failed = await checkGroup('Runtime translations', 'l10n/bundle.l10n.json', runtimeFiles) || failed;
+
+const missingRuntimeSourceKeys = await findMissingRuntimeSourceKeys('l10n/bundle.l10n.json');
+if (missingRuntimeSourceKeys.length > 0) {
+	failed = true;
+	console.error('Runtime source strings missing from l10n/bundle.l10n.json:');
+	console.error(`  ${missingRuntimeSourceKeys.join('\n  ')}`);
+}
 
 if (failed) {
 	process.exitCode = 1;

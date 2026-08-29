@@ -9,6 +9,9 @@
 - 新增 watcher 移入／移出 ignored path、rename-vs-move 分類測試，以及 `docs/watch-ignore-policy-2026-07-03.md` policy 紀錄。
 
 ### 改善
+- 完成 P1 本地化與信任邊界：runtime 訊息統一使用 VS Code l10n、Build／建置術語一致，i18n gate 也會偵測原始碼引用但基準 bundle 缺少的 key。
+- `Deploy.start()` 與 `getIgnoreConfig()` 改為直接 async function，取消與 cache 錯誤都能穩定 settled。
+- 移除高頻且重複的 transfer、connection-pool 與 watcher debug log，保留本地化使用者診斷與結構化技術錯誤標籤。
 - config cache、queue、connection pool、watcher state、Tree node、upload debounce 與遠端暫存檔全部納入 workspace scope。
 - queue、watcher、event 與 FTP/SFTP client 邊界改用明確 TypeScript union／interface。
 - Git submit 改用固定的 `execFile("git", args)` 步驟與結構化錯誤分類，不再組合 shell command。
@@ -21,6 +24,14 @@
 - watcher 同父目錄路徑變更標記為 `rename`、跨父目錄標記為 `move`，底層仍使用相容 FTP/SFTP 的遠端 rename 操作。
 
 ### 修正
+- 未信任工作區不再執行 `config.build`；使用者可開啟 Workspace Trust 管理，信任後再重新同步。
+- Deploy 取消後維持 `cancelled` 終態，不會因直接 async 錯誤傳遞被覆寫為 `failed`。
+- watch 模式若將資料夾記為待上傳，展開其中檔案時現在會保留每個子檔的 workspace-relative 路徑，避免 SFTP `fastPut` 把父目錄（例如 `/volumes/html/wordcloud/lib`）當成檔案目的地。
+- 因應 2026 年 8 月新公告漏洞，將 `socks` 的傳遞依賴 `ip-address` 覆寫為 10.3.1；production audit 恢復為零已知漏洞。
+- `tools/**` 等尾端 globstar 規則現在同時排除 `tools` 目錄根與全部子項目，避免 parent-directory watcher event 進入 upload queue。
+- 本機來源已改名或刪除時，stale upload task 會在連線與建立遠端父目錄前結束，不再反覆回報 ENOENT，也不會在資料夾改名後留下舊遠端目錄。
+- watcher change event 在 `lstat` 前路徑已消失時會安全略過，不再拋出 ENOENT。
+- 2026 年 7 月新公告影響 `brace-expansion` 的漏洞改以 5.0.9 覆寫傳遞版本；production audit 恢復為零已知漏洞，最低 VS Code 仍維持 1.82。
 - 等待 Tree refresh 完成後才釋放 mutex，避免 node 尚未更新就進入下一批事件。
 - retry 重新連線失敗時不再把已歸還的 client 重複放回 connection pool。
 - 空部署也會進入 completed finalize，不再讓 Tree View 停留在 busy。

@@ -889,7 +889,6 @@ export class DepNodeProvider implements vscode.TreeDataProvider<TreeItem>, vscod
 							obj.isNew = false
 						} else {
 							const progress = Math.min(parseFloat(((info.bytes / fileSize) * 100).toFixed(2)), 100);
-							oConsole.log(`下载进度: ${progress}% (${info.bytes} / ${fileSize} 字节)`);
 							task.progress = progress
 							if (progress >= 100 || !info.bytes) {
 								task.useTime = getUseTime(task.start)
@@ -909,7 +908,6 @@ export class DepNodeProvider implements vscode.TreeDataProvider<TreeItem>, vscod
 						if (client.fastGet) {
 							client.fastGet(obj.realPath, filePath, {
 								step: async (transferred: number, chunk: number, total: number) => {
-									oConsole.log(`已传输: ${transferred}/${total} 字节`);
 									let progress = Math.min(parseFloat(((transferred / total) * 100).toFixed(2)), 100);
 									task.progress = progress
 									if (progress >= 100) {
@@ -1268,7 +1266,6 @@ export class DepNodeProvider implements vscode.TreeDataProvider<TreeItem>, vscod
 
 	// 清除缓存
 	async clearCache(item: Dependency) {
-		oConsole.log('清除缓存');
 		// 获取 workspaceState 对象
 		const workspaceState = this.context.workspaceState;
 		let cache_key = item.config.name + '###' + item.config.workspaceRoot

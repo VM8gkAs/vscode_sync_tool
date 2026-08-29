@@ -4,6 +4,30 @@
 
 ## v0.6.3（2026-07-17）
 
+### 2026-08-30 P1 本地化與 Workspace Trust 收尾
+- **Workspace Trust**：未信任工作區無法執行 `sync_config.jsonc` 提供的 `config.build` shell command；提示可開啟信任管理，並要求信任後重新啟動同步。
+- **非同步邊界**：`Deploy.start()` 與 `getIgnoreConfig()` 不再使用 async Promise executor；取消、throw 與 ignore cache 讀寫錯誤會正常 settled。
+- **本地化**：核心使用者訊息改用 VS Code l10n，Build／建置術語統一；高頻重複 debug／進度 log 已移除，技術資訊使用固定結構化標籤。
+- **i18n gate**：除語系集合與缺少／額外 key 外，現在也會掃描 `src/**/*.ts` 的 literal l10n key，攔截原始碼引用但基準 bundle 缺少的項目。
+- **驗證**：新增 build 成功／失敗、untrusted prompt cancellation、Deploy cancellation 及 ignore cache read/write failure 聚焦測試；75 tests、strict typecheck、source-aware i18n、lint、production build、audit 0、VS Code 1.82／Stable 1.135.0 與 58 files／2.37 MiB VSIX 均通過。
+- **VSIX SHA-256**：`F3F6438100AD1DF9A5B610171F9089567DF43B6BC450F476C729CE54EBED3DB9`。
+
+### 2026-08-30 watch 資料夾上傳路徑修正
+- **現象**：watch 模式記錄資料夾新增後，執行同步時，子檔可能以父目錄作為遠端目的地；例如本機 `html/wordcloud/lib/pocketbase.umd.js` 被送往 `/volumes/html/wordcloud/lib`，造成 SFTP `fastPut: Failure` 並保留錯誤任務。
+- **根因**：`Deploy.uploadFile()` 展開待上傳資料夾後，重用了資料夾事件的 `remotePath`，沒有按每個子檔重新附加 workspace-relative suffix。
+- **修正**：統一本機基準與遠端基準，每個展開後的檔案都獨立計算完整遠端路徑；一般 workspace-root 與 `upload_to_root` 模式共用同一套計算。
+- **設定說明**：`watch: true` 且 `upload_on_save: false` 只收集「待上傳」變更，仍需執行同步；需要儲存後立即上傳時應使用 `upload_on_save: true`。
+- **依賴安全性**：因應 2026 年 8 月新公告的 `ip-address` SSRF／trust-boundary bypass 漏洞，`socks` 的傳遞版本覆寫為 10.3.1；production audit 恢復為零已知漏洞。
+- **驗證**：新增 Windows 本機路徑與 SFTP 遠端路徑回歸案例；69 passing、strict typecheck、i18n、lint error gate、production build、production audit（0 vulnerabilities）、VS Code 1.82／Stable 1.135.0 Extension Host 均通過。
+
+### 2026-07-31 實測回歸修正
+- **`tools/**` 目錄根事件**：Minimatch 可命中 `tools` 內的檔案，但原 matcher 未將尾端 `/**` 的 literal root 視為同一排除範圍；現在 `tools` 與其所有 descendants 都會在 watcher policy gate 被排除。
+- **瞬間消失的 watcher path**：`onDidChange` 的 `lstatSync()` 現在會安全處理 ENOENT，避免 rename／delete 競態把不存在路徑回報成同步錯誤。
+- **資料夾新增後立即改名**：舊路徑的 pending upload task 若已失效，會在取得 client 前完成；若路徑在 dispatch 後才消失，也會在任何 remote parent mutation 前結束。
+- **遠端重複目錄根因**：舊流程先建立遠端父目錄，再對已被改名的本機來源執行 `stat`，因此 retry 會留下舊目錄；現在先確認本機來源，再允許建立遠端路徑。
+- **依賴安全性**：因 2026 年 7 月新增的 `brace-expansion` advisories，傳遞版本統一覆寫為 5.0.9；production audit 為零已知漏洞，且 VS Code 1.82 Extension Host 驗證通過。
+- **完整驗證**：新增 globstar directory-root、stale upload 與 remote-parent mutation 回歸案例；68 passing、strict typecheck、i18n、lint error gate、production build、production audit、VS Code 1.82／Stable 1.131.0 Extension Host 與 VSIX 實包均通過。
+
 ### 發行摘要
 - 完成 P0 正確性收尾、P1 型別／Git 安全邊界與 P2 效能改善，並保留 VS Code 1.82 最低執行版本。
 - Output 成功記錄不再於 queue finalize 後消失；使用者可選擇寫入工作區相對檔案 log。

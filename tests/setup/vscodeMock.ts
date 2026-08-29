@@ -34,6 +34,7 @@ export const vscodeMock: any = {
 		Left: 1
 	},
 	workspace: {
+		isTrusted: true,
 		workspaceFolders: [] as { uri: { fsPath: string } }[],
 		textDocuments: [] as any[],
 		getWorkspaceFolder: (uri: { fsPath: string }) => {
@@ -72,6 +73,7 @@ export const vscodeMock: any = {
 		}),
 		showErrorMessage: async (message: string) => message,
 		showInformationMessage: async (message: string) => message,
+		showWarningMessage: async (message: string) => message,
 		showInputBox: async () => '',
 		showQuickPick: async () => undefined,
 		showOpenDialog: async () => undefined,
@@ -158,6 +160,7 @@ export function installVscodeMock() {
 export function resetVscodeMock(workspaceRoot?: string | string[]) {
 	const roots = Array.isArray(workspaceRoot) ? workspaceRoot : workspaceRoot ? [workspaceRoot] : [];
 	vscodeMock.workspace.workspaceFolders = roots.map(fsPath => ({ uri: { fsPath } }));
+	vscodeMock.workspace.isTrusted = true;
 	workspaceStateValues.clear();
 	vscodeMockOutput.value = '';
 	vscodeMockOutput.clearCount = 0;

@@ -166,6 +166,14 @@ export default class FileTransfer extends EventEmitter {
                 // 定义任务执行的函数
                 const executeTask = async (task: Task) => {
                     try {
+						if (task.operationType === 'upload' && !fs.existsSync(task.localPath)) {
+							oConsole.log(`[skip] ${l10n.t('Local file {0} does not exist', task.localPath)}`);
+							task.progress = 100;
+							task.error = '';
+							updateTaskProgress();
+							callback && callback();
+							return;
+						}
                         client = await this.getClient(task.config);
                         if (task.config.type === 'ftp' && isFTPClient(client)) await client.cd("/")
                         this.configItem = task.config;
@@ -225,7 +233,7 @@ export default class FileTransfer extends EventEmitter {
                                 await this.renameFile(client, task);
                                 break;
                             default:
-                                throw new Error(`Unknown operation type: ${task.operationType}`);
+								throw new Error(`[operation:unknown] ${task.operationType}`);
                         }
 
                         // 释放连接
@@ -271,15 +279,14 @@ export default class FileTransfer extends EventEmitter {
                             task.retries ? task.retries++ : task.retries = 1;  // 增加重试次数
                             // console.error(`Error during ${task.operationType} of ${task.localPath} to ${task.remotePath}:`, err);
                             if (task.retries < maxRetries) {
-                                oConsole.log(`Retrying (${task.retries}/${maxRetries})...`);
+								oConsole.log(`${l10n.t('Retry')} (${task.retries}/${maxRetries})`);
                                 msg = `[${l10n.t('Retry')} (${task.retries}/${maxRetries})] ${err}`
                                 task.error = `${msg}`
                                 updateTaskProgress();
                                 await sleep(FileTransfer.taskRetryDelayMs);
                                 await executeTask(task);  // 递归调用以进行重试
                             } else {
-                                oConsole.error(`Task failed after ${maxRetries} retries.`);
-                                task.error = `${err}`
+								task.error = `${err}`
                                 updateTaskProgress();
 
                                 // 退出任务
@@ -334,7 +341,7 @@ export default class FileTransfer extends EventEmitter {
             });
 
             if (cleanupError) {
-                oConsole.error(`[${configItem.name}] queue cleanup failed: ${cleanupError}`);
+				oConsole.error(`[${configItem.name}][queue:cleanup][error] ${cleanupError}`);
             }
 
         }
@@ -371,9 +378,7 @@ export default class FileTransfer extends EventEmitter {
                 if (v.length() !== 0) {
                     continue;
                 }
-                oConsole.log("清理连接池中....");
-
-                // 循环清理所有 FTP 连接池
+				// 循环清理所有 FTP 连接池
                 await FileTransfer.cleanupConnectionPool(FileTransfer.ftpConnectionPools[k], 'ftp' as TargetTypes);
                 // 循环清理所有 SFTP 连接池
                 await FileTransfer.cleanupConnectionPool(FileTransfer.sftpConnectionPools[k], 'sftp' as TargetTypes);
@@ -406,11 +411,9 @@ export default class FileTransfer extends EventEmitter {
             try {
                 // 检查 FTP 或 SFTP 连接是否仍然活跃
                 await (type === TargetTypes.ftp ? (client as FTPClientType).pwd() : (client as SFTPClientType).cwd());
-                oConsole.log(`Connection is still active, keeping in pool.`);
-            } catch (err) {
+			} catch (err) {
                 // 如果检测失败，说明连接不可用，移除连接
-                oConsole.log(`Connection is not active, cleaning up ${type} connection.`);
-                pool.splice(i, 1);
+				pool.splice(i, 1);
                 try {
                     if (type === TargetTypes.ftp) {
                         (client as FTPClientType).close();
@@ -506,7 +509,7 @@ export default class FileTransfer extends EventEmitter {
 
                 if (configClone.type === 'ftp') {
                     if (!isFTPClient(client)) {
-                        throw new Error('FTP client initialization failed');
+						throw new Error(l10n.t('Failed to connect: {0}', 'FTP'));
                     }
                     // 设置 FTP 用户名，并连接
                     configClone.user = configClone.username;
@@ -541,7 +544,7 @@ export default class FileTransfer extends EventEmitter {
                 }
 
                 releaseLease();
-                throw new ClientConnectionError(`Failed to connect: ${err}`);
+                throw new ClientConnectionError(l10n.t('Failed to connect: {0}', `${err}`));
             }
         }
 
@@ -579,8 +582,7 @@ export default class FileTransfer extends EventEmitter {
                 : FileTransfer.sftpConnectionPools[scopeKey];
 
             if (pool.length >= this.maxConnections) {
-                oConsole.log(`Pool for ${config.name} is full (${pool.length}/${this.maxConnections}), closing connection instead of returning to pool.`);
-                try {
+				try {
                     if (config.type === 'ftp') {
                         (client as FTPClientType).close();
                     } else {
@@ -597,8 +599,7 @@ export default class FileTransfer extends EventEmitter {
                 FileTransfer.sftpConnectionPools[scopeKey].push(client as SFTPClientType);
             }
         } catch (err) {
-            oConsole.log('Connection check failed, removing connection:', err);
-            try {
+			try {
                 if (config.type === 'ftp') {
                     (client as FTPClientType).close();
                 } else {
@@ -682,13 +683,22 @@ export default class FileTransfer extends EventEmitter {
 
     async uploadFile(client: FileTransferClient, task: Task): Promise<void> {
         let { localPath, remotePath, config, useZip, isDirectory } = task;
-        let remoteDirPath = path.dirname(remotePath);
-        // 检查文件夹是否存在
-        await this.checkExistFolder(task.config, client, remoteDirPath)
-        const fileStat = fs.statSync(task.localPath);
+		let fileStat: ReturnType<typeof fs.statSync>;
+		try {
+			fileStat = fs.statSync(task.localPath);
+		} catch (error) {
+			if ((error as NodeJS.ErrnoException).code === 'ENOENT') {
+				oConsole.log(`[skip] ${l10n.t('Local file {0} does not exist', task.localPath)}`);
+				return;
+			}
+			throw error;
+		}
         task.fileSize = fileStat.size
         task.isDirectory = fileStat.isDirectory()
         task.fileSizeText = formatFileSize(task.fileSize)
+		let remoteDirPath = path.dirname(remotePath);
+		// 本機路徑確認存在後才允許建立遠端父目錄，避免 stale task 留下空目錄。
+		await this.checkExistFolder(task.config, client, remoteDirPath)
 
         // skipIfSame: 已在 executeTask 中完成檢查，此處不再重複
 
@@ -715,8 +725,7 @@ export default class FileTransfer extends EventEmitter {
                                 task.progress = 100
                             } else {
                                 const progress = Math.min(parseFloat(((info.bytes / task.fileSize) * 100).toFixed(2)), 100);
-                                oConsole.log(`上传进度: ${progress}% (${info.bytes} / ${task.fileSize} 字节)`);
-                                task.progress = progress
+								task.progress = progress
                                 if (progress >= 100 || !info.bytes) {
                                     task.useTime = getUseTime(task.start)
                                 }
@@ -924,9 +933,9 @@ export default class FileTransfer extends EventEmitter {
                 }
             }
 
-            const summary = errorLogs.length
-                ? `all ftp commands failed: ${errorLogs.join(' | ')}`
-                : `${lastErr}`;
+			const summary = errorLogs.length
+				? `[ftp:file-time][error] ${errorLogs.join(' | ')}`
+				: `${lastErr}`;
             throw new Error(summary);
         }
 
@@ -1073,7 +1082,7 @@ export default class FileTransfer extends EventEmitter {
                         reject(`${l10n.t('Decompression failed')}: ${v}`)
                     }
                 }).catch((err: unknown) => {
-                    oConsole.error(`解压失败: ${remotePath}`, err);
+					oConsole.error(`${l10n.t('Decompression failed')}: ${remotePath}`, err);
                     reject(`${l10n.t('Decompression failed')}: ${remotePath}`)
                 });
         });
@@ -1219,8 +1228,7 @@ export default class FileTransfer extends EventEmitter {
                                 }, 3000);
                             } else {
                                 const progress = Math.min(parseFloat(((info.bytes / fileSize) * 100).toFixed(2)), 100);
-                                oConsole.log(`下载进度: ${progress}% (${info.bytes} / ${fileSize} 字节)`);
-                                task.progress = progress
+								task.progress = progress
                                 if (progress >= 100 || !info.bytes) {
                                     delete this.existFileSize[info.name]
                                     task.useTime = getUseTime(task.start)
@@ -1240,8 +1248,7 @@ export default class FileTransfer extends EventEmitter {
                     // 下载文件
                     await sftpClient.fastGet(task.remotePath, task.localPath, {
                         step: (transferred: number, _chunk: number, total: number) => {
-                            oConsole.log(`已传输: ${transferred}/${total} 字节`);
-                            let progress = Math.min(parseFloat(((transferred / total) * 100).toFixed(2)), 100);
+							let progress = Math.min(parseFloat(((transferred / total) * 100).toFixed(2)), 100);
                             task.progress = progress
                             if (progress >= 100) {
                                 task.useTime = getUseTime(task.start)
@@ -1255,8 +1262,7 @@ export default class FileTransfer extends EventEmitter {
                 }
             }
         } catch (err) {
-            oConsole.error(`Error downloading file: ${err}`);
-            throw err;
+			throw err;
         }
     }
 
@@ -1291,8 +1297,7 @@ export default class FileTransfer extends EventEmitter {
                 }
             }
         } catch (err) {
-            oConsole.error(`FTP 下载文件出错: ${err}`);
-            throw err;
+			throw err;
         }
     }
 
@@ -1326,8 +1331,7 @@ export default class FileTransfer extends EventEmitter {
                 }
             }
         } catch (err) {
-            oConsole.error(`SFTP 下载文件出错: ${err}`);
-            throw err;
+			throw err;
         }
     }
 
@@ -1408,8 +1412,7 @@ export default class FileTransfer extends EventEmitter {
             }
             return
         } catch (err) {
-            oConsole.error(`Error renaming file: ${err}`);
-            throw err;
+			throw err;
         }
     }
 
@@ -1480,8 +1483,7 @@ export default class FileTransfer extends EventEmitter {
             task.useTime = getUseTime(task.start)
             return
         } catch (err) {
-            oConsole.error(`Error deleting file: ${err}`);
-            throw err;
+			throw err;
         }
     }
 
@@ -1496,16 +1498,14 @@ export default class FileTransfer extends EventEmitter {
 
         const inFlightProbe = FileTransfer.concurrencyProbeInFlight[scopeKey];
         if (inFlightProbe) {
-            oConsole.log(`Concurrency probe for ${config.name} already in progress, reusing it.`);
-            return inFlightProbe;
+			return inFlightProbe;
         }
 
         const now = Date.now();
         const lastStartedAt = FileTransfer.concurrencyProbeLastStartedAt[scopeKey] || 0;
         const elapsed = now - lastStartedAt;
         if (elapsed < FileTransfer.concurrencyProbeCooldownMs) {
-            oConsole.log(`Skipping concurrency probe for ${config.name}; cooldown ${FileTransfer.concurrencyProbeCooldownMs - elapsed}ms remaining.`);
-            return
+			return
         }
 
         FileTransfer.concurrencyProbeLastStartedAt[scopeKey] = now;
@@ -1526,8 +1526,7 @@ export default class FileTransfer extends EventEmitter {
                         : FileTransfer.sftpConnectionPools[scopeKey];
 
                     if (pool.length >= this.maxConnections + queue.running()) {
-                        oConsole.log(`Max connections of ${this.maxConnections} already achieved.`);
-                        break;
+						break;
                     }
 
                     const connections = [];
@@ -1539,17 +1538,15 @@ export default class FileTransfer extends EventEmitter {
                     await Promise.all(arr.map(client => this.releaseClient(client, config)));
 
                     if (queue.concurrency < this.maxConnections) {
-                        oConsole.log(`Increasing concurrency...`);
-                        queue.concurrency++;
+						queue.concurrency++;
                         FileTransfer.maxConnectionsMap[scopeKey] = queue.concurrency;
                         break;
                     } else {
-                        oConsole.log(`Connection pool not filled. Current pool length: ${queue.concurrency}`);
-                        testSuccess = false; // 强制退出
+						testSuccess = false; // 强制退出
                     }
 
                 } catch (e) {
-                    oConsole.error(`Error during connection:`, e);
+					oConsole.error(l10n.t('Failed to connect: {0}', `${e}`));
                     testSuccess = false; // 遇到错误，退出循环
                 }
 
@@ -1560,11 +1557,7 @@ export default class FileTransfer extends EventEmitter {
                 }
             }
 
-            oConsole.log(`Final connection pool length: ${(config.type === "ftp")
-                ? FileTransfer.ftpConnectionPools[scopeKey].length
-                : FileTransfer.sftpConnectionPools[scopeKey].length}`);
-
-        });
+		});
 
         FileTransfer.concurrencyProbeInFlight[scopeKey] = probe;
         try {
@@ -1686,8 +1679,7 @@ export default class FileTransfer extends EventEmitter {
 
     //清空缓存
     clearCache = async (config: FileTransferConfigItem) => {
-        oConsole.log("清空缓存");
-        // 获取 workspaceState 对象
+		// 获取 workspaceState 对象
         const workspaceState = this.context.workspaceState
         const rootPath = config.workspaceRoot || this.rootPath
         const cache_key = `${config.name}###${rootPath}`
@@ -1716,7 +1708,7 @@ export default class FileTransfer extends EventEmitter {
             }
             const instance = FileTransfer.queueOwners[scopeKey] || FileTransfer.instance
             const queue = FileTransfer.queues[scopeKey]
-            if (!queue) throw new Error(`Task queue is not initialized: ${scopeKey}`)
+			if (!queue) throw new Error(`[queue:init][error] ${scopeKey}`)
             FileTransfer.finalizedQueues.delete(scopeKey)
             FileTransfer.queueTerminalStates[scopeKey] = undefined
             for (const task of scopedTasks) {
@@ -1745,7 +1737,7 @@ export default class FileTransfer extends EventEmitter {
                 }
             } catch (error) {
             // 捕获并处理异常
-                oConsole.error("Failed to add tasks to queue:", error);
+				oConsole.error(`[queue:add][error] ${error?.toString()}`);
             }
         }
     }

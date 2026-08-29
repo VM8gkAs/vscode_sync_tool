@@ -19,7 +19,7 @@ import { StatusBarUi } from "./statusBar"
 import { FileTransferClient } from "./types/client"
 import { flushWatchCacheUpdates } from "./watchCache"
 
-const { log, error } = oConsole
+const { error } = oConsole
 
 export class Deploy {
 	label: string
@@ -74,67 +74,57 @@ export class Deploy {
 		this.isCanceled = true
 	}
 
-	start = () => {
-		return new Promise<void>(async (resolve, reject) => {
-			let isError = false
-			try {
-				const { taskList } = this
-				const { length } = taskList
-				for (let i = 0; i < length; i++) {
-					if (isError || this.isCanceled) break // 检查 isCanceled 标志位
-					const { task, async, tip, increment, type } = taskList[i]
-					if (async === false) {
-						task()
-					} else {
-						await task()
-					}
-					switch (type) {
-						case 'submit git':
-							this.config.submit_git_before_upload && this.showLog(this.config, type, '', tip)
-							break;
-						case 'exec build':
-							this.config.build && this.showLog(this.config, type, 'success', this.config.build)
-							break;
-						case 'build zip':
-							this.config.compress && this.showLog(this.config, type, 'success', tip + "：" + this.zipPath)
-							break;
-						case 'delete remote file':
-							this.config.deleteRemote && this.showLog(this.config, type, 'success', tip)
-							break;
-						default:
-							this.showLog(this.config, type, '', tip)
-							break;
-					}
-
-				}
-				if (this.isCanceled) {
-					this.files = []
-					await this.fileTransfer.finalizeQueue(this.config, 'cancelled')
-					reject(new Error(l10n.t('Task canceled')))
+	start = async () => {
+		try {
+			const { taskList } = this
+			for (const { task, async, tip, type } of taskList) {
+				if (this.isCanceled) break
+				if (async === false) {
+					task()
 				} else {
-					const queue = FileTransfer.queues[getConfigScopeKey(this.config)]
-					if (!queue || queue.idle()) {
-						await this.fileTransfer.finalizeQueue(this.config, 'completed')
-					}
-					resolve()
+					await task()
 				}
-			} catch (err) {
-				isError = true
-				if (!(err instanceof ClientConnectionError)) {
-					let msg = `[${this.label}][${this.config.type}][error]`;
-					// this.showLog(this.config, type, 'error/', tip)
-					vscode.window.showErrorMessage(`${msg}: ${err?.toString()}`);
+				switch (type) {
+					case 'submit git':
+						this.config.submit_git_before_upload && this.showLog(this.config, type, '', tip)
+						break;
+					case 'exec build':
+						this.config.build && this.showLog(this.config, type, 'success', this.config.build)
+						break;
+					case 'build zip':
+						this.config.compress && this.showLog(this.config, type, 'success', tip + "：" + this.zipPath)
+						break;
+					case 'delete remote file':
+						this.config.deleteRemote && this.showLog(this.config, type, 'success', tip)
+						break;
+					default:
+						this.showLog(this.config, type, '', tip)
+						break;
 				}
-				// await FileTransfer.changeAsyncStatus(this.config.name, 'stop')
-				await this.fileTransfer.finalizeQueue(this.config, 'failed')
-				reject(err)
 			}
-		});
+		} catch (err) {
+			if (!(err instanceof ClientConnectionError)) {
+				const msg = `[${this.label}][${this.config.type}][error]`;
+				vscode.window.showErrorMessage(`${msg}: ${err?.toString()}`);
+			}
+			await this.fileTransfer.finalizeQueue(this.config, 'failed')
+			throw err
+		}
+
+		if (this.isCanceled) {
+			this.files = []
+			await this.fileTransfer.finalizeQueue(this.config, 'cancelled')
+			throw new Error(l10n.t('Task canceled'))
+		}
+
+		const queue = FileTransfer.queues[getConfigScopeKey(this.config)]
+		if (!queue || queue.idle()) {
+			await this.fileTransfer.finalizeQueue(this.config, 'completed')
+		}
 	}
 
 	// 检查配置文件是否完整
 	checkConfig = async () => {
-		log(`检测配置`)
 		let { distPath, watch } = this.config
 		await verityConfig(this.config)
 		if (!Array.isArray(distPath)) {
@@ -201,7 +191,6 @@ export class Deploy {
 
 	// 提交git
 	submitGIt = async () => {
-		log(`提交git`)
 		try {
 			await checkSubmitGit(this.rootPath, this.config)
 		} catch (error) {
@@ -210,16 +199,27 @@ export class Deploy {
 	}
 
 	// 执行打包脚本
-	execBuild = () => {
-		log(`执行打包脚本`)
+	execBuild = async () => {
 		const { config } = this
 		const { build } = config
 		if (!build) {
-			return Promise.resolve()
+			return
 		}
-		return new Promise<void>((resolve, reject) => {
+		if (!vscode.workspace.isTrusted) {
+			const manageTrust = l10n.t('Manage Workspace Trust')
+			const selection = await vscode.window.showWarningMessage(
+				l10n.t('Build command was not run because this workspace is not trusted.'),
+				manageTrust,
+				l10n.t('Cancel')
+			)
+			if (selection === manageTrust) {
+				await vscode.commands.executeCommand('workbench.trust.manage')
+			}
+			throw new Error(l10n.t('Build command requires a trusted workspace. Trust the workspace and start synchronization again.'))
+		}
+		await new Promise<void>((resolve, reject) => {
 			childProcess.exec(
-				`${build}`,
+				build,
 				{ cwd: this.rootPath, maxBuffer: 1024 * 1024 * 1024 },
 				(e: Error | null) => {
 					if (e === null) {
@@ -263,7 +263,6 @@ export class Deploy {
 		}
 
 		this.zipPath = "upload_" + dayjs().format("YYYYMMDD_HHmmss") + ".zip";
-		log(`压缩文件夹：${this.zipPath}`);
 		const archive = archiver("zip", {
 			zlib: { level: 9 }
 		});
@@ -297,7 +296,7 @@ export class Deploy {
 				archive.file(v.file, { name: path.relative(basePath, v.file) });
 			}
 
-			let msg = l10n.t('Compressing files');
+			let msg = l10n.t('Compress file');
 			await new Promise<void>((resolve, reject) => {
 				archive.on('error', (e) => {
 					reject(e)
@@ -349,13 +348,10 @@ export class Deploy {
 
 	// 删除远程文件
 	rmRemoteFile = async () => {
-		log(`删除远程文件`)
 		const { config } = this
 		let { deleteRemote, remotePath, distPath, type } = config
 		if (deleteRemote) {
 			let remoteFilePath = type == 'ftp' ? "" : remotePath
-			log(`4. 删除远程文件 ${remoteFilePath}`)
-
 			let arr: string[] = []
 			if (!Array.isArray(distPath)) {
 				distPath = distPath?.split(",")
@@ -389,10 +385,8 @@ export class Deploy {
 
 	// 同步文件
 	syncFiles = async () => {
-		log(`同步文件`)
 		// 是否压缩上传
 		if (this.config.compress && this.useZip) {
-			oConsole.log("上传压缩文件");
 			let remotePath = path.posix.join(this.config.type !== "ftp" ? this.config.remotePath : "", this.zipPath)
 			const localPath = path.join(this.rootPath, this.zipPath)
 
@@ -434,22 +428,16 @@ export class Deploy {
 		}
 		let len = this.config.distPath?.length || 0
 
-		let remotePath = path.posix.join(
-			this.config.type !== "ftp" ? this.config.remotePath : "",
-			posixRelative(this.rootPath, v.file)
-		)
-
 		// 只有一个目录则上传该目录下文件，不包含目录
-		let up_to_root = false
+		let localBasePath = this.rootPath
 		if (len == 1 && this.config.distPath && this.config.upload_to_root) {
-			up_to_root = true
-
-			let new_path = path.join(this.rootPath, this.config.distPath[0])
-			remotePath = path.posix.join(
-				this.config.type !== "ftp" ? this.config.remotePath : "",
-				posixRelative(new_path, v.file)
-			)
+			localBasePath = path.join(this.rootPath, this.config.distPath[0])
 		}
+		const remoteBasePath = this.config.type !== "ftp" ? this.config.remotePath : "/"
+		const getRemotePath = (localPath: string) => path.posix.join(
+			remoteBasePath,
+			posixRelative(localBasePath, localPath)
+		)
 
 		// 判断是文件还是文件夹
 		if (isDirectory.sync(v.file)) {
@@ -459,28 +447,19 @@ export class Deploy {
 			)
 			if (files && files.length) {
 				for (const vv of files) {
-					if (up_to_root) {
-						remotePath = path.posix.join(
-							this.config.type !== "ftp" ? this.config.remotePath : "",
-							posixRelative(this.config.type !== "ftp" ? this.rootPath : "", vv)
-						)
-					}
-
-					remotePath = this.config.type == "ftp" ? path.posix.join("/", remotePath) : remotePath
 					await FileTransfer.addTask({
 						config: this.config,
 						localPath: vv,
-						remotePath,
+						remotePath: getRemotePath(vv),
 						operationType: 'upload'
 					});
 				}
 			}
 		} else {
-			remotePath = this.config.type == "ftp" ? path.posix.join("/", remotePath) : remotePath
 			await FileTransfer.addTask({
 				config: this.config,
 				localPath: v.file,
-				remotePath,
+				remotePath: getRemotePath(v.file),
 				operationType: 'upload'
 			});
 		}

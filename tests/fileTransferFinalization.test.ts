@@ -93,6 +93,8 @@ describe('FileTransfer queue finalization', () => {
 
 	it('finalizes a successful drain once and clears the watch cache', async () => {
 		const config = createConfig();
+		const localPath = path.join(workspaceRoot, 'file.txt');
+		fs.writeFileSync(localPath, 'upload');
 		const transfer = new FileTransfer(config);
 		stubSuccessfulTransfer(transfer);
 		const cacheKey = `${config.name}###${workspaceRoot}`;
@@ -100,7 +102,7 @@ describe('FileTransfer queue finalization', () => {
 
 		await FileTransfer.addTask({
 			config,
-			localPath: path.join(workspaceRoot, 'file.txt'),
+			localPath,
 			remotePath: '/remote/file.txt',
 			operationType: 'upload'
 		});
@@ -189,8 +191,56 @@ describe('FileTransfer queue finalization', () => {
 		assert.strictEqual(FileTransfer.queueTerminalStates[scopeKey(config)], 'completed');
 	});
 
+	it('skips an obsolete upload before opening a connection or mutating the remote path', async () => {
+		const config = createConfig();
+		const transfer = new FileTransfer(config);
+		let connectionAttempts = 0;
+		let uploadAttempts = 0;
+		transfer.getClient = async () => {
+			connectionAttempts++;
+			return {};
+		};
+		transfer.uploadFile = async () => {
+			uploadAttempts++;
+		};
+		const task: any = {
+			config,
+			localPath: path.join(workspaceRoot, 'renamed-away', 'file.txt'),
+			remotePath: '/remote/renamed-away/file.txt',
+			operationType: 'upload'
+		};
+
+		await FileTransfer.addTask(task);
+		await waitForFinalization(config);
+
+		assert.strictEqual(connectionAttempts, 0);
+		assert.strictEqual(uploadAttempts, 0);
+		assert.strictEqual(task.retries, undefined);
+		assert.strictEqual(FileTransfer.queueTerminalStates[scopeKey(config)], 'completed');
+	});
+
+	it('does not create a remote parent when the local path disappears before transfer', async () => {
+		const config = createConfig();
+		const transfer = new FileTransfer(config);
+		let remoteFolderChecks = 0;
+		transfer.checkExistFolder = async () => {
+			remoteFolderChecks++;
+		};
+
+		await transfer.uploadFile({}, {
+			config,
+			localPath: path.join(workspaceRoot, 'renamed-away', 'file.txt'),
+			remotePath: '/remote/renamed-away/file.txt',
+			operationType: 'upload'
+		});
+
+		assert.strictEqual(remoteFolderChecks, 0);
+	});
+
 	it('finalizes retry exhaustion as failed and preserves the task error', async () => {
 		const config = createConfig();
+		const localPath = path.join(workspaceRoot, 'file.txt');
+		fs.writeFileSync(localPath, 'retry');
 		const transfer = new FileTransfer(config);
 		stubSuccessfulTransfer(transfer);
 		transfer.uploadFile = async () => {
@@ -198,7 +248,7 @@ describe('FileTransfer queue finalization', () => {
 		};
 		const task: any = {
 			config,
-			localPath: path.join(workspaceRoot, 'file.txt'),
+			localPath,
 			remotePath: '/remote/file.txt',
 			operationType: 'upload'
 		};
@@ -212,6 +262,8 @@ describe('FileTransfer queue finalization', () => {
 
 	it('finalizes connection errors as failed', async () => {
 		const config = createConfig();
+		const localPath = path.join(workspaceRoot, 'file.txt');
+		fs.writeFileSync(localPath, 'connect');
 		const transfer = new FileTransfer(config);
 		transfer.getClient = async () => {
 			throw new ClientConnectionError('connection refused');
@@ -219,7 +271,7 @@ describe('FileTransfer queue finalization', () => {
 		transfer.releaseClient = async () => undefined;
 		const task: any = {
 			config,
-			localPath: path.join(workspaceRoot, 'file.txt'),
+			localPath,
 			remotePath: '/remote/file.txt',
 			operationType: 'upload'
 		};
@@ -233,6 +285,8 @@ describe('FileTransfer queue finalization', () => {
 
 	it('does not release the same client twice when a retry cannot reconnect', async () => {
 		const config = createConfig();
+		const localPath = path.join(workspaceRoot, 'retry.txt');
+		fs.writeFileSync(localPath, 'retry');
 		const transfer = new FileTransfer(config);
 		const client = {};
 		let connectionAttempts = 0;
@@ -252,7 +306,7 @@ describe('FileTransfer queue finalization', () => {
 		transfer.addMaxConcurrency = async () => undefined;
 		const task: any = {
 			config,
-			localPath: path.join(workspaceRoot, 'retry.txt'),
+			localPath,
 			remotePath: '/remote/retry.txt',
 			operationType: 'upload'
 		};
@@ -275,6 +329,19 @@ describe('FileTransfer queue finalization', () => {
 		await deploy.start();
 
 		assert.strictEqual(FileTransfer.queueTerminalStates[scopeKey(config)], 'completed');
+		assert.strictEqual(FileTransfer.finalizedQueues.has(scopeKey(config)), true);
+	});
+
+	it('finalizes a cancelled deployment without overwriting it as failed', async () => {
+		const config = createConfig();
+		const Deploy = require('../src/deploy').Deploy;
+		const deploy = new Deploy({ config });
+		deploy.taskList = [];
+		deploy.cancel();
+
+		await assert.rejects(deploy.start(), /Task canceled/);
+
+		assert.strictEqual(FileTransfer.queueTerminalStates[scopeKey(config)], 'cancelled');
 		assert.strictEqual(FileTransfer.finalizedQueues.has(scopeKey(config)), true);
 	});
 

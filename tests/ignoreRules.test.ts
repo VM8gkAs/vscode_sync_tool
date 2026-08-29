@@ -55,6 +55,21 @@ describe('ignore rule baseline', () => {
 		assert.deepStrictEqual(files.map(file => path.relative(workspaceRoot, file).split(path.sep).join('/')).sort(), ['src/index.ts']);
 	});
 
+	it('treats a trailing globstar rule as matching both the directory root and descendants', async () => {
+		const toolsDirectory = path.join(workspaceRoot, 'tools');
+		const toolsFile = path.join(toolsDirectory, 'nested', 'file.txt');
+		const matcher = utils.createPathIgnoreMatcher(['tools/**'], workspaceRoot);
+
+		assert.strictEqual(matcher.isIgnored(toolsDirectory), true);
+		assert.strictEqual(matcher.isIgnored(toolsFile), true);
+		assert.strictEqual(matcher.shouldTraverse(toolsDirectory), false);
+		assert.strictEqual(await utils.resolveWatchChangeForIgnore(
+			['tools/**'],
+			toolsDirectory,
+			{ op: 'add', type: 'directory' }
+		), null);
+	});
+
 	it('keeps local traversal output stable across concurrency settings', async () => {
 		for (const relativeFile of ['a/1.txt', 'a/2.txt', 'b/3.txt', 'root.txt']) {
 			const file = path.join(workspaceRoot, relativeFile);
@@ -165,6 +180,53 @@ describe('ignore rule baseline', () => {
 		assert.strictEqual(matcher.isIgnored(path.join(workspaceRoot, 'dist', 'drop.txt')), true);
 		assert.strictEqual(matcher.isIgnored(path.join(workspaceRoot, 'dist', 'from-config.txt')), false);
 		assert.strictEqual(matcher.isIgnored(path.join(workspaceRoot, 'dist', 'from-git.txt')), false);
+	});
+
+	it('rejects when reading the gitignore cache source fails', async () => {
+		setConfigurationValue('gitignore', true);
+		fs.writeFileSync(path.join(workspaceRoot, '.gitignore'), 'dist');
+		const fsExtra = require('fs-extra');
+		const originalReadFileSync = fsExtra.readFileSync;
+		fsExtra.readFileSync = () => {
+			throw new Error('gitignore read failed');
+		};
+
+		try {
+			await assert.rejects(utils.getIgnoreConfig({
+				name: 'main',
+				type: TargetTypes.sftp,
+				host: 'example.com',
+				port: 22,
+				username: 'user',
+				remotePath: '/remote',
+				workspaceRoot
+			}, workspaceRoot), /gitignore read failed/);
+		} finally {
+			fsExtra.readFileSync = originalReadFileSync;
+		}
+	});
+
+	it('rejects when persisting the gitignore cache fails', async () => {
+		setConfigurationValue('gitignore', true);
+		fs.writeFileSync(path.join(workspaceRoot, '.gitignore'), 'dist');
+		const originalUpdate = vscodeMockExtensionContext.workspaceState.update;
+		vscodeMockExtensionContext.workspaceState.update = async () => {
+			throw new Error('ignore cache write failed');
+		};
+
+		try {
+			await assert.rejects(utils.getIgnoreConfig({
+				name: 'main',
+				type: TargetTypes.sftp,
+				host: 'example.com',
+				port: 22,
+				username: 'user',
+				remotePath: '/remote',
+				workspaceRoot
+			}, workspaceRoot), /ignore cache write failed/);
+		} finally {
+			vscodeMockExtensionContext.workspaceState.update = originalUpdate;
+		}
 	});
 
 	it('converts a rename into an ignored folder to a delete of the original path', async () => {

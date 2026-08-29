@@ -213,7 +213,7 @@ async function getDefaultConfig(sourcePath: string) {
 // 生成远程路径
 function generateRemotePath(item: FileTransferConfigItem, sourcePath: string) {
 	const rootPath = item.workspaceRoot || getRootPath(sourcePath)
-	if (!rootPath) throw new Error(`File is outside the workspace: ${sourcePath}`)
+	if (!rootPath) throw new Error(l10n.t('File is outside the workspace: {0}', sourcePath))
 	return path.posix.join(item.type !== "ftp" ? item.remotePath : "/", posixRelative(rootPath, sourcePath));
 }
 
@@ -269,7 +269,6 @@ function initFileEvents(context: vscode.ExtensionContext): void {
 	// const fileWatcher = vscode.workspace.createFileSystemWatcher('**/*');
 	context.subscriptions.push(
 		fileWatcher.onDidCreate(async (uri) => {
-			oConsole.log(`创建了：${uri.fsPath}`)
 			if (renamingFiles.has(uri.fsPath)) {
 				return;
 			}
@@ -293,7 +292,6 @@ function initFileEvents(context: vscode.ExtensionContext): void {
 	)
 
 	fileWatcher.onDidChange((uri) => {
-		oConsole.log(`修改了：${uri.fsPath}`)
 		if (saveFiles.has(uri.fsPath)) {
 			return;
 		}
@@ -304,7 +302,14 @@ function initFileEvents(context: vscode.ExtensionContext): void {
 		}
 
 		if (!getRootPath(uri.fsPath)) return
-		if (fs.lstatSync(uri.fsPath).isDirectory()) {
+		let isDirectoryPath: boolean;
+		try {
+			isDirectoryPath = fs.lstatSync(uri.fsPath).isDirectory();
+		} catch (error) {
+			if ((error as NodeJS.ErrnoException).code === "ENOENT") return;
+			throw error;
+		}
+		if (isDirectoryPath) {
 			const opType: opType = {
 				op: "add",
 				type: "directory"
@@ -349,7 +354,6 @@ function initFileEvents(context: vscode.ExtensionContext): void {
 	context.subscriptions.push(
 		vscode.workspace.onWillDeleteFiles(async (e) => {
 			for (const v of e.files) {
-				oConsole.log(`删除了：${v.fsPath}`)
 				if (!getRootPath(v.fsPath)) continue
 				if (fs.lstatSync(v.fsPath).isDirectory()) {
 					const opType: opType = {
@@ -382,7 +386,6 @@ function initFileEvents(context: vscode.ExtensionContext): void {
 		vscode.workspace.onWillRenameFiles((event) => {
 			const { files } = event
 			for (const v of files) {
-				oConsole.log(`重命名了：${v.oldUri} 为 ${v.newUri}`)
 				if (!getRootPath(v.oldUri.fsPath)) continue
 
 				const isDir = isDirectory.sync(v.oldUri.fsPath);
@@ -537,8 +540,6 @@ async function saveChangeFile(
 let debounceSave = debounce(async (document) => {
 	let rootPath = getRootPath(document.uri.fsPath)
 	let context = getContext()
-	oConsole.log(`保存了文件`, document)
-
 	// 记录将要被重命名的文件或文件夹
 	saveFiles.add(document.uri.fsPath);
 	setTimeout(() => {
