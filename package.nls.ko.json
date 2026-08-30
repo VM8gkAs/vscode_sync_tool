@@ -39,5 +39,8 @@
   "SyncTools.openFileSizeLimit": "파일 열기 크기 확인. 기본값은 5 Mb입니다.",
   "SyncTools.uploadTaskNumber": "업로드 수가 몇 개 이상일 때 병렬 업로드를 사용할지 여부. 기본값은 10입니다.",
   "SyncTools.uploadConcurrentLimit": "업로드 병렬 처리 제한: 병렬 처리 수는 최소 1, 최대 100이며, 기본값은 3입니다.",
+  "SyncTools.selectConfigStorePath": "설정 파일 저장 디렉토리 선택",
+  "SyncTools.resetConfigStorePath": "설정 파일 저장 경로 초기화 (프로젝트 루트 사용)",
+  "SyncTools.configStorePath.description": "설정 파일용 외부 디렉터리입니다. **Sync Tools: 설정 파일 저장 디렉토리 선택** (`sync_tools.selectConfigStorePath`)을 사용하세요. `sync_config.jsonc`는 `<경로>/<프로젝트>-<해시>/sync_config.jsonc`에 저장됩니다. 비워 두면 프로젝트 루트를 사용합니다.",
   "SyncTools.proxyConfig.description": "[구성 문서](https://www.npmjs.com/package/socks) \n\n 구성 참조:\n\n ```js \n{\n   \"proxyHost\": \"127.0.0.1\", // ipv4, ipv6 또는 호스트 이름 \n   \"proxyPort\": 7890, \n   \"proxyUsername\": \"\", // SOCKS4 userId 인증 및 SOCKS5 user/pass 인증에 사용됩니다.\n   \"proxyPassword\": \"\", // SOCKS5 프록시의 사용자/비밀번호 인증에 userId와 함께 사용됩니다.\n   \"proxyType\": 5 // 프록시 버전 (4 또는 5). v4a의 경우 4, v5h의 경우 5를 사용합니다.\n}\n ```"
 }

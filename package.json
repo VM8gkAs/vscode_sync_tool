@@ -198,6 +198,16 @@
         "title": "%SyncTools.changeSecretKey%"
       },
       {
+        "command": "sync_tools.selectConfigStorePath",
+        "title": "%SyncTools.selectConfigStorePath%",
+        "icon": "$(folder-opened)"
+      },
+      {
+        "command": "sync_tools.resetConfigStorePath",
+        "title": "%SyncTools.resetConfigStorePath%",
+        "icon": "$(discard)"
+      },
+      {
         "command": "sync_tools.encrypt",
         "title": "%SyncTools.encrypt%"
       },
@@ -233,6 +243,14 @@
         },
         {
           "command": "sync_tools.closeAllClient",
+          "when": "view == 'asyncToolsView'"
+        },
+        {
+          "command": "sync_tools.selectConfigStorePath",
+          "when": "view == 'asyncToolsView'"
+        },
+        {
+          "command": "sync_tools.resetConfigStorePath",
           "when": "view == 'asyncToolsView'"
         }
       ],
@@ -450,6 +468,12 @@
           "maximum": 100,
           "default": 3,
           "description": "%SyncTools.uploadConcurrentLimit%"
+        },
+        "SyncTools.configStorePath": {
+          "type": "string",
+          "default": "",
+          "markdownDescription": "%SyncTools.configStorePath.description%",
+          "order": 100
         }
       }
     }

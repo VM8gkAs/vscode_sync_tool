@@ -39,5 +39,8 @@
   "SyncTools.openFileSizeLimit": "Prompt for opening files larger than the specified size, default is 5 Mb",
   "SyncTools.uploadTaskNumber": "Use concurrent upload when the number of uploads exceeds the specified value, default is 10",
   "SyncTools.uploadConcurrentLimit": "Upload concurrency configuration: Minimum concurrency is 1, maximum is 100, default is 3",
+  "SyncTools.selectConfigStorePath": "Select Config Store Directory",
+  "SyncTools.resetConfigStorePath": "Reset Config Store Path (Use Project Root)",
+  "SyncTools.configStorePath.description": "External directory for configuration files. Use **Sync Tools: Select Config Store Directory** (`sync_tools.selectConfigStorePath`). `sync_config.jsonc` is stored in `<path>/<project>-<hash>/sync_config.jsonc`. Leave empty to use the project root.",
   "SyncTools.proxyConfig.description": "[Configuration Document](https://www.npmjs.com/package/socks) \n\n Configuration reference: \n\n ```js \n{\n   \"proxyHost\": \"127.0.0.1\", // ipv4, ipv6 or hostname \n   \"proxyPort\": 7890, \n   \"proxyUsername\": \"\", // Used for SOCKS4 userId authentication, and SOCKS5 user/pass authentication in combination with password. \n   \"proxyPassword\": \"\", // Used in combination with userId for user/password authentication of SOCKS5 proxy. \n   \"proxyType\": 5 // Proxy version (4 or 5). Use 4 for v4a, use 5 for v5h. \n}\n ```"
 }

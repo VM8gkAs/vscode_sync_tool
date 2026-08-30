@@ -94,5 +94,11 @@
   "Build command requires a trusted workspace. Trust the workspace and start synchronization again.": "La commande de build exige un espace de travail approuvé. Approuvez-le puis relancez la synchronisation.",
   "File is outside the workspace: {0}": "Le fichier se trouve hors de l'espace de travail : {0}",
   "Upload failed": "Échec de l'envoi",
-  "Failed to connect: {0}": "Échec de la connexion : {0}"
+  "Failed to connect: {0}": "Échec de la connexion : {0}",
+  "A configuration file already exists at {0}.": "Un fichier de configuration existe déjà dans {0}.",
+  "Move {0} configuration file(s) to the selected location?": "Déplacer {0} fichier(s) de configuration vers l'emplacement sélectionné ?",
+  "Select config store directory": "Sélectionner le répertoire de stockage de configuration",
+  "The config store directory must be an absolute path outside every workspace.": "Le répertoire de configuration doit être un chemin absolu hors de tous les espaces de travail.",
+  "Config store path already uses the project root.": "Le chemin de configuration utilise déjà la racine du projet.",
+  "Could not move configuration file(s): {0}": "Impossible de déplacer le ou les fichiers de configuration : {0}"
 }

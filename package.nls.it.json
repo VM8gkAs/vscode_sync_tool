@@ -39,5 +39,8 @@
   "SyncTools.openFileSizeLimit": "Richiesta per l'apertura di file in base alla dimensione. Di default è 5 MB.",
   "SyncTools.uploadTaskNumber": "Utilizzare il caricamento concorrente quando il numero di caricamenti è maggiore di quanto? Di default è 10.",
   "SyncTools.uploadConcurrentLimit": "Configurazione del numero di caricamenti simultanei: il numero minimo di connessioni simultanee è 1, il massimo è 100. Di default è 3.",
+  "SyncTools.selectConfigStorePath": "Seleziona directory di archiviazione configurazione",
+  "SyncTools.resetConfigStorePath": "Reimposta percorso di archiviazione configurazione (usa root del progetto)",
+  "SyncTools.configStorePath.description": "Directory esterna per i file di configurazione. Usa **Sync Tools: Seleziona directory di archiviazione configurazione** (`sync_tools.selectConfigStorePath`). `sync_config.jsonc` viene salvato in `<percorso>/<progetto>-<hash>/sync_config.jsonc`. Lascia vuoto per usare la root del progetto.",
   "SyncTools.proxyConfig.description": "[Documentazione di configurazione](https://www.npmjs.com/package/socks) \n\n Esempio di configurazione:\n\n ```js \n{\n   \"proxyHost\": \"127.0.0.1\", // ipv4, ipv6 o nome host \n   \"proxyPort\": 7890, \n   \"proxyUsername\": \"\", // Utilizzato per l'autenticazione userId di SOCKS4 e l'autenticazione user/pass di SOCKS5 in combinazione con la password. \n   \"proxyPassword\": \"\", // Utilizzato in combinazione con userId per l'autenticazione user/pass del proxy SOCKS5. \n   \"proxyType\": 5 // Versione del proxy (4 o 5). Utilizzare 4 per v4a e 5 per v5h. \n}\n ```"
 }

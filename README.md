@@ -139,6 +139,14 @@
 - Remote traversal and file transfers share the `SyncTools.uploadConcurrentLimit` connection budget. The effective traversal concurrency never exceeds that global limit, and automatically falls back to fewer clients when no spare lease is available.
 - A remote directory-listing failure aborts that discovery batch before any partial download tasks are queued.
 
+### External Configuration Storage
+
+- Run **Sync Tools: Select Config Store Directory** to move `sync_config.jsonc` outside the workspace and reduce the risk of committing credentials.
+- Each workspace uses `<selected directory>/<project name>-<8-character hash>/sync_config.jsonc`; workspaces with the same folder name remain isolated.
+- The selected directory must be an absolute path outside every open workspace. Existing target files are never overwritten.
+- Run **Sync Tools: Reset Config Store Path (Use Project Root)** to copy configurations back to their project roots. Cancelling a migration leaves the current location unchanged.
+- Configuration storage is independent of `sync_config.jsonc` traversal settings and does not change remote upload paths.
+
 ### Authentication Priority & Validation Errors
 
 - For `sftp` / `ssh`, authentication tries `privateKeyPath` first; if it is unavailable, it falls back to `password`.

@@ -39,5 +39,8 @@
   "SyncTools.openFileSizeLimit": "Pytanie o rozmiar pliku do otwarcia, domyślnie 5 Mb",
   "SyncTools.uploadTaskNumber": "Od jakiej liczby przesyłanych plików ma być używane przesyłanie współbieżne, domyślnie 10",
   "SyncTools.uploadConcurrentLimit": "Konfiguracja limitu współbieżności przesyłania: minimalna współbieżność to 1, maksymalna to 100, domyślnie 3",
+  "SyncTools.selectConfigStorePath": "Wybierz katalog przechowywania konfiguracji",
+  "SyncTools.resetConfigStorePath": "Resetuj ścieżkę przechowywania konfiguracji (użyj katalogu głównego projektu)",
+  "SyncTools.configStorePath.description": "Zewnętrzny katalog na pliki konfiguracyjne. Użyj **Sync Tools: Wybierz katalog przechowywania konfiguracji** (`sync_tools.selectConfigStorePath`). `sync_config.jsonc` jest zapisywany w `<ścieżka>/<projekt>-<hash>/sync_config.jsonc`. Pozostaw puste, aby użyć katalogu głównego projektu.",
   "SyncTools.proxyConfig.description": "[Dokumentacja konfiguracji](https://www.npmjs.com/package/socks) \n\n Przykład konfiguracji: \n\n ```js \n{\n   \"proxyHost\": \"127.0.0.1\", // ipv4, ipv6 lub nazwa hosta \n   \"proxyPort\": 7890, \n   \"proxyUsername\": \"\", // Używane do uwierzytelniania userId w SOCKS4 i w połączeniu z hasłem w uwierzytelnianiu user/pass w SOCKS5. \n   \"proxyPassword\": \"\", // Używane wraz z userId do uwierzytelniania user/pass w proxy SOCKS5. \n   \"proxyType\": 5 // Wersja proxy (4 lub 5). Dla v4a użyj 4, dla v5h użyj 5. \n}\n ```"
 }
