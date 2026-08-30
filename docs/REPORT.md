@@ -15,7 +15,7 @@
 - 2026-08-30 修正 watch 資料夾待辦展開後重用父目錄遠端路徑的問題；每個子檔現在都保留完整 workspace-relative suffix。
 - 2026-08-30 完成 P1-4／P1-5：核心訊息與 Build 術語已統一，untrusted workspace 不會執行 `config.build`，async Promise executor 已移除並補齊聚焦測試。
 - 2026-08-30 完成 upstream `390af0d` 選擇性整合：移除到期閘門，並以 multi-root、安全搬移、失敗回復與 cache reload 重新實作外部配置儲存；未帶入 agent rule、生成檔與 vendored SFTP 改寫。
-- 本機 `upstream-main` 已精確指向 upstream `390af0d`；推送 `origin/upstream-main` 因 GitHub HTTPS token 無效而待重新認證，未影響本機整合與驗證。
+- `upstream-main` 已精確指向 upstream `390af0d` 並推送至 `origin/upstream-main`；經審查的整合則由 `main` 保存，不直接修改純 upstream 鏡像。
 - 下一步依序處理 P3。
 - 目前不追最新版工具鏈；build baseline 維持 Node 22、pnpm 10、VS Code `^1.82.0`。
 
