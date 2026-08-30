@@ -16,6 +16,7 @@
   "SyncTools.newFile": "Новый файл",
   "SyncTools.newFolder": "Новая папка",
   "SyncTools.compare": "Сравнить",
+  "SyncTools.extractRemoteArchive": "Распаковать удалённый ZIP",
   "SyncTools.rename": "Переименовать",
   "SyncTools.permission": "Разрешение",
   "SyncTools.pauseSync": "Приостановить синхронизацию",

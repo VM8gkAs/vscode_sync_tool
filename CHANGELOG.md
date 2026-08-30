@@ -10,11 +10,16 @@
 ### Added
 - Added `SyncTools.configStorePath` plus commands to select or reset an external `sync_config.jsonc` directory. Multi-root workspaces use stable `<project>-<hash>` directories, same-name projects remain isolated, and existing target files are never overwritten.
 - Added focused coverage for external-path validation, project-root migration fallback, same-name workspace isolation, external configuration loading without `.gitignore` mutation, and relocation rollback after an I/O failure.
+- Added **Extract Remote ZIP** to SSH ZIP file context menus. Extraction requires the remote `unzip` command, confirms possible overwrites, quotes POSIX shell arguments, and rejects absolute, drive-qualified, or parent-traversal archive entries.
+- Added focused P3 coverage for drag/drop cancellation, cross-workspace moves, overwrite prevention, remote extraction, terminal status publication, and fresh local-to-remote comparisons.
 
 ### Changed
 - Removed the encrypted extension expiration gate; extension activation no longer stops at a hard-coded date.
 - Adapted the upstream external-config idea to the current multi-root and cache model instead of importing upstream generated files, repository agent rules, or vendored SFTP changes.
 - Configuration relocation now rolls back staged copies and reports a localized error if copying or updating the global setting fails, so an I/O error does not abort extension activation.
+- Hardened Tree drag/drop and remote moves with POSIX remote paths, cancellation, same-connection validation, self-move rejection, destination collision checks, and exactly-once client release.
+- Localized failed, cancelled, and stopped terminal states across the Tree View and Status Bar.
+- File comparison now rejects directories, always refreshes the remote copy, waits for the diff command, and consistently displays local on the left and remote on the right.
 
 ## v0.6.3 (2026-07-17)
 

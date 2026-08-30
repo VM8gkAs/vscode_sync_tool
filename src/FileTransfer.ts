@@ -44,6 +44,40 @@ type DownloadTraversalEntry = {
     isDirectory: boolean;
 };
 
+export function quotePosixShellArgument(value: string): string {
+    if (!value || /[\0\r\n]/.test(value)) {
+        throw new Error(l10n.t('Invalid remote path: {0}', value));
+    }
+    return `'${value.replace(/'/g, `'"'"'`)}'`;
+}
+
+export function buildRemoteUnzipCommand(remoteArchivePath: string, destinationPath: string): string {
+    const normalizedArchivePath = getNormalPath(remoteArchivePath);
+    const normalizedDestinationPath = getNormalPath(destinationPath);
+    const archiveArgument = normalizedArchivePath.startsWith('-')
+        ? `./${normalizedArchivePath}`
+        : normalizedArchivePath;
+    return `unzip -o ${quotePosixShellArgument(archiveArgument)} -d ${quotePosixShellArgument(normalizedDestinationPath)}`;
+}
+
+export function buildRemoteZipListCommand(remoteArchivePath: string): string {
+    const normalizedArchivePath = getNormalPath(remoteArchivePath);
+    const archiveArgument = normalizedArchivePath.startsWith('-')
+        ? `./${normalizedArchivePath}`
+        : normalizedArchivePath;
+    return `unzip -Z1 ${quotePosixShellArgument(archiveArgument)}`;
+}
+
+export function findUnsafeZipEntry(listing: string): string | undefined {
+    return listing.split(/\r?\n/).find(entry => {
+        const normalizedEntry = entry.replace(/\\/g, '/');
+        const segments = normalizedEntry.split('/');
+        return normalizedEntry.startsWith('/')
+            || /^[A-Za-z]:\//.test(normalizedEntry)
+            || segments.includes('..');
+    });
+}
+
 class ConnectionLimiter {
     private active = 0;
     private waiters: Array<(release: () => void) => void> = [];
@@ -255,7 +289,7 @@ export default class FileTransfer extends EventEmitter {
                         if (task.compare && !task.isDirectory) {
                             let localPath = path.join(this.rootPath, path.relative(task.config.type == 'ftp' ? "/" : task.config.remotePath, task.remotePath))
                             // 执行对比命令
-                            vscode.commands.executeCommand('vscode.diff', vscode.Uri.file(task.localPath), vscode.Uri.file(localPath), `${l10n.t('Local file')} ↔ ${l10n.t('Remote file')}: ${path.relative(this.rootPath, localPath)}`);
+                            await vscode.commands.executeCommand('vscode.diff', vscode.Uri.file(localPath), vscode.Uri.file(task.localPath), `${l10n.t('Local file')} ↔ ${l10n.t('Remote file')}: ${path.relative(this.rootPath, localPath)}`);
                         }
 
                         // 动态增加并发数
@@ -328,9 +362,12 @@ export default class FileTransfer extends EventEmitter {
         } catch (err) {
             cleanupError = err;
         } finally {
-            const stateText = terminalState === 'completed'
-                ? l10n.t('All tasks completed')
-                : terminalState;
+            const stateText = {
+                completed: l10n.t('All tasks completed'),
+                failed: l10n.t('Sync failed'),
+                cancelled: l10n.t('Sync cancelled'),
+                stopped: l10n.t('Sync stopped')
+            }[terminalState];
             StatusBarUi.working(`${[configItem.name]} ${stateText}`);
             myEvent.fire({
                 name: configItem.name,
@@ -772,7 +809,7 @@ export default class FileTransfer extends EventEmitter {
         if (useZip) {
             // 是否远程解压
             if (config.type == 'ssh' && task.config.remote_unpacked) {
-                await this.UnzipFile(client as SFTPClientType, task.config, localPath, remotePath)
+                await this.unzipRemoteFile(client as SFTPClientType, remotePath, task.config.remotePath)
             }
             //是否删除远程压缩文件
             if (task.config.delete_remote_compress) {
@@ -1070,22 +1107,33 @@ export default class FileTransfer extends EventEmitter {
     }
 
 
-    // 解压远程文件
-    UnzipFile(client: SFTPClientType, config: FileTransferConfigItem, localPath: string, remotePath: string) {
-        return new Promise<void>((resolve, reject) => {
-            client
-                .exec(`unzip -o ${remotePath} -d ${config.remotePath}`)
-                .then(async (v) => {
-                    if (!v.code) {
-                        resolve()
-                    } else {
-                        reject(`${l10n.t('Decompression failed')}: ${v}`)
-                    }
-                }).catch((err: unknown) => {
-					oConsole.error(`${l10n.t('Decompression failed')}: ${remotePath}`, err);
-                    reject(`${l10n.t('Decompression failed')}: ${remotePath}`)
-                });
-        });
+    async unzipRemoteFile(client: SFTPClientType, remoteArchivePath: string, destinationPath: string): Promise<void> {
+        const normalizedArchivePath = getNormalPath(remoteArchivePath);
+        if (path.posix.extname(normalizedArchivePath).toLowerCase() !== '.zip') {
+            throw new Error(l10n.t('Only SSH ZIP files can be extracted remotely.'));
+        }
+
+        const availability = await client.exec('command -v unzip >/dev/null 2>&1');
+        if (availability.code !== 0) {
+            throw new Error(l10n.t('Remote server does not provide the unzip command.'));
+        }
+
+        const listing = await client.exec(buildRemoteZipListCommand(normalizedArchivePath));
+        if (listing.code !== 0) {
+            const detail = (listing.stderr || listing.stdout || `exit ${listing.code}`).trim();
+            throw new Error(`${l10n.t('Decompression failed')}: ${detail}`);
+        }
+        const unsafeEntry = findUnsafeZipEntry(listing.stdout);
+        if (unsafeEntry) {
+            throw new Error(l10n.t('ZIP archive contains an unsafe path: {0}', unsafeEntry));
+        }
+
+        const result = await client.exec(buildRemoteUnzipCommand(normalizedArchivePath, destinationPath));
+        if (result.code !== 0) {
+            const detail = (result.stderr || result.stdout || `exit ${result.code}`).trim();
+            oConsole.error(`${l10n.t('Decompression failed')}: ${normalizedArchivePath} ${detail}`);
+            throw new Error(`${l10n.t('Decompression failed')}: ${detail}`);
+        }
     }
 
 

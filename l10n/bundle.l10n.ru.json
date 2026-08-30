@@ -100,5 +100,17 @@
   "Select config store directory": "Выбрать каталог хранения конфигурации",
   "The config store directory must be an absolute path outside every workspace.": "Каталог конфигурации должен быть абсолютным путём вне всех рабочих областей.",
   "Config store path already uses the project root.": "Путь конфигурации уже использует корень проекта.",
-  "Could not move configuration file(s): {0}": "Не удалось переместить файлы конфигурации: {0}"
+  "Could not move configuration file(s): {0}": "Не удалось переместить файлы конфигурации: {0}",
+  "Invalid remote path: {0}": "Недопустимый удалённый путь: {0}",
+  "Only SSH ZIP files can be extracted remotely.": "Удалённо можно распаковывать только ZIP-файлы через SSH.",
+  "Remote server does not provide the unzip command.": "На удалённом сервере отсутствует команда unzip.",
+  "Remote items can only be moved within the same connection.": "Удалённые элементы можно перемещать только в пределах одного подключения.",
+  "A folder cannot be moved into itself.": "Папку нельзя переместить внутрь самой себя.",
+  "Remote target already exists: {0}": "Удалённая цель уже существует: {0}",
+  "Extract {0} into {1}? Existing files may be overwritten.": "Распаковать {0} в {1}? Существующие файлы могут быть перезаписаны.",
+  "Only files can be compared.": "Сравнивать можно только файлы.",
+  "Sync failed": "Сбой синхронизации",
+  "Sync cancelled": "Синхронизация отменена",
+  "Sync stopped": "Синхронизация остановлена",
+  "ZIP archive contains an unsafe path: {0}": "ZIP-архив содержит небезопасный путь: {0}"
 }

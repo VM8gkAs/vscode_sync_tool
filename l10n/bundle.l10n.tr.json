@@ -100,5 +100,17 @@
   "Select config store directory": "Yapılandırma depolama dizini seç",
   "The config store directory must be an absolute path outside every workspace.": "Yapılandırma dizini tüm çalışma alanlarının dışında mutlak bir yol olmalıdır.",
   "Config store path already uses the project root.": "Yapılandırma yolu zaten proje kökünü kullanıyor.",
-  "Could not move configuration file(s): {0}": "Yapılandırma dosyaları taşınamadı: {0}"
+  "Could not move configuration file(s): {0}": "Yapılandırma dosyaları taşınamadı: {0}",
+  "Invalid remote path: {0}": "Geçersiz uzak yol: {0}",
+  "Only SSH ZIP files can be extracted remotely.": "Yalnızca SSH ZIP dosyaları uzaktan çıkarılabilir.",
+  "Remote server does not provide the unzip command.": "Uzak sunucuda unzip komutu bulunmuyor.",
+  "Remote items can only be moved within the same connection.": "Uzak öğeler yalnızca aynı bağlantı içinde taşınabilir.",
+  "A folder cannot be moved into itself.": "Bir klasör kendi içine taşınamaz.",
+  "Remote target already exists: {0}": "Uzak hedef zaten mevcut: {0}",
+  "Extract {0} into {1}? Existing files may be overwritten.": "{0}, {1} konumuna çıkarılsın mı? Mevcut dosyaların üzerine yazılabilir.",
+  "Only files can be compared.": "Yalnızca dosyalar karşılaştırılabilir.",
+  "Sync failed": "Eşitleme başarısız",
+  "Sync cancelled": "Eşitleme iptal edildi",
+  "Sync stopped": "Eşitleme durduruldu",
+  "ZIP archive contains an unsafe path: {0}": "ZIP arşivi güvenli olmayan bir yol içeriyor: {0}"
 }

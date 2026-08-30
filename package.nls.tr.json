@@ -16,6 +16,7 @@
   "SyncTools.newFile": "Yeni Dosya",
   "SyncTools.newFolder": "Yeni Klasör",
   "SyncTools.compare": "Karşılaştır",
+  "SyncTools.extractRemoteArchive": "Uzak ZIP dosyasını çıkar",
   "SyncTools.rename": "Yeniden Adlandır",
   "SyncTools.permission": "İzin",
   "SyncTools.pauseSync": "Senkronizasyonu Duraklat",

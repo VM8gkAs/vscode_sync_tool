@@ -15,8 +15,9 @@
 - 2026-08-30 修正 watch 資料夾待辦展開後重用父目錄遠端路徑的問題；每個子檔現在都保留完整 workspace-relative suffix。
 - 2026-08-30 完成 P1-4／P1-5：核心訊息與 Build 術語已統一，untrusted workspace 不會執行 `config.build`，async Promise executor 已移除並補齊聚焦測試。
 - 2026-08-30 完成 upstream `390af0d` 選擇性整合：移除到期閘門，並以 multi-root、安全搬移、失敗回復與 cache reload 重新實作外部配置儲存；未帶入 agent rule、生成檔與 vendored SFTP 改寫。
+- 2026-08-30 完成 P3-1～P3-5：拖曳／遠端移動安全邊界、同步終態顯示、SSH ZIP 安全解壓縮與右鍵命令，以及 fresh remote 單檔差異檢視均已補齊測試。
 - `upstream-main` 已精確指向 upstream `390af0d` 並推送至 `origin/upstream-main`；經審查的整合則由 `main` 保存，不直接修改純 upstream 鏡像。
-- 下一步依序處理 P3。
+- 下一步為 P3-6 雙向同步；開始前需先定義衝突策略、覆寫確認與批次結果 UI。
 - 目前不追最新版工具鏈；build baseline 維持 Node 22、pnpm 10、VS Code `^1.82.0`。
 
 ## 開發項目核對表
@@ -38,11 +39,11 @@
 | ✅ | P2-2 有界並行下載 traversal | 每份 `sync_config.jsonc` 可設定 `downloadTraversalConcurrency`；預設 2，設為 1 可恢復舊版序列 traversal，並與 transfer 共用全域連線額度。 |
 | ✅ | P2-3 Tree cache 生命週期 | `allNodes` 已改為 `Map` 與統一 subtree eviction；refresh／delete／rename／disconnect 不再留下失效索引，完成事件以 50 ms 批次更新。 |
 | ✅ | P2-4 非阻塞本地 traversal | `getAllFiles()` 已改用 `fs.promises`／`Dirent` 與有界非同步 I/O；`localTraversalConcurrency` 預設 4，設為 1 可降低磁碟瞬時負載。 |
-| 🟡 | P3-1 拖曳上傳／遠端移動確認 | Tree View drag-and-drop 與持久設定 `SyncTools.confirmMoveOrUpload` 已實作；尚無聚焦測試。 |
-| ✅ | P3-2 同步狀態一致收尾 | `completed`、`failed`、`cancelled`、`stopped` 已統一更新 Tree View／Status Bar，並由 finalize 保證只收尾一次。 |
-| 🟡 | P3-3 SSH 壓縮上傳與自動解壓 | ZIP 建立、壓縮檔上傳與 SSH `unzip` 已實作；仍缺路徑 quoting、安全執行、能力檢查與聚焦測試。 |
-| ⬜ | P3-4 SSH 遠端右鍵解壓縮 | commands、Tree View context menu 與 command handler 均未提供遠端解壓縮操作。 |
-| 🟡 | P3-5 單檔差異檢視 UI | Tree View 與 Explorer 已提供 compare command，並透過 `vscode.diff` 比較本地與遠端檔案；尚無聚焦測試。 |
+| ✅ | P3-1 拖曳上傳／遠端移動確認 | 本機 URI 拖曳支援取消與 POSIX 路徑；遠端移動限制同一 config/workspace scope、禁止移入自身、不覆寫既有目的地，且 client 僅釋放一次。 |
+| ✅ | P3-2 同步狀態一致收尾 | `completed`、`failed`、`cancelled`、`stopped` 已統一更新 Tree View／Status Bar／UI event，使用者可見終態已本地化，並由 finalize 保證只收尾一次。 |
+| ✅ | P3-3 SSH 壓縮上傳與自動解壓 | 遠端 `unzip` 具能力檢查、POSIX shell 參數 quoting、ZIP 項目 path traversal 預檢、精確 exit code 與錯誤內容處理，並有聚焦測試。 |
+| ✅ | P3-4 SSH 遠端右鍵解壓縮 | SSH `.zip` 節點提供本地化右鍵命令；確認覆寫風險後解壓至父目錄，成功刷新 Tree、失敗保留結構化 log，client 一律釋放。 |
+| ✅ | P3-5 單檔差異檢視 UI | Tree View 與 Explorer 均拒絕資料夾、每次重新下載遠端副本、await `vscode.diff`，並統一本機在左、遠端在右。 |
 | ⬜ | P3-6 雙向同步 | 尚未建立雙向同步流程、衝突策略與批次差異檢視。 |
 
 狀態圖示：⬜ 未完成；🟡 部分完成；✅ 已完成。
@@ -93,6 +94,7 @@ P2 處理結果（原審查項目）：
 - 發布入口：`dist/extension.js`，VSIX 使用 `--no-dependencies` 打包。
 - 正式依賴安全稽核：0 vulnerabilities。
 - 最近驗證：
+  - 2026-08-30 P3-1～P3-5 完成：102 passing、strict typecheck、source-aware i18n、lint error gate、production build、production audit（0 vulnerabilities）、VS Code 1.82／Stable 1.135.0 Extension Host 與暫存 VSIX（58 files、2.33 MiB；bundle 6.84 MiB）均通過；SHA-256 `0C8B6228AA917E45433F645F3DCDF1F0A291D43C9D60A54805294F78AF70C3DD`。
   - 2026-08-30 upstream 選擇性整合：80 passing、strict typecheck、source-aware i18n、lint error gate、production build、production audit（0 vulnerabilities）、VS Code 1.82／Stable 1.135.0 Extension Host 與暫存 VSIX（58 files、2.35 MiB；bundle 6.93 MiB）均通過；SHA-256 `C5018C8DEA29ADDAF16D4CFD69E1903F8E6FB5F480C89CFD38F2806026D44AF3`。
   - 2026-08-30 P1 完成與 v0.6.3 重建：75 passing、strict typecheck、source-aware i18n、lint error gate、production build、production audit（0 vulnerabilities）、VS Code 1.82／Stable 1.135.0 Extension Host 與 VSIX 實包（58 files、2.37 MiB）均通過；SHA-256 `F3F6438100AD1DF9A5B610171F9089567DF43B6BC450F476C729CE54EBED3DB9`。
   - 2026-08-30 watch 資料夾上傳路徑修正：69 passing、strict typecheck、i18n、lint error gate、production build、production audit（0 vulnerabilities）、VS Code 1.82／Stable 1.135.0 Extension Host 與 VSIX 實包（58 files、2.34 MiB）均通過。
@@ -360,7 +362,7 @@ watcher ignore policy：
 - Git submit 已使用固定參數與非 shell 執行，該路徑已收斂。
 - `config.build` 只允許 trusted workspace 執行；untrusted workspace 會提示開啟 Workspace Trust 管理並要求信任後重試。
 - `Deploy.start()` 與 `getIgnoreConfig()` 已改為直接 async function，取消與錯誤不再受 outer Promise executor 影響。
-- SSH `unzip` 的遠端 path quoting 另由 P3-3 追蹤。
+- SSH `unzip` 的遠端 path quoting、能力檢查與 archive entry 安全預檢已由 P3-3 完成。
 
 完成證據：
 
@@ -372,7 +374,7 @@ watcher ignore policy：
 - untrusted workspace 無法觸發本地 shell command。
 - build success／failure、prompt cancellation、Deploy cancellation 與 ignore cache 讀寫錯誤均有聚焦測試。
 
-風險：已收斂；SSH unzip path quoting 仍由 P3-3 追蹤。
+風險：已收斂。
 
 ## P2：效能與擴展性
 
@@ -443,21 +445,16 @@ watcher ignore policy：
 
 ## P3：產品體驗與新功能
 
-建議順序：
+P3-1～P3-5 已完成：
 
-1. SSH 壓縮、解壓縮的安全執行、錯誤處理與測試完善。
-2. SSH 遠端右鍵解壓縮。
-3. 雙向同步與批次差異檢視 UI。
+- 拖曳本機檔案支援標準 URI list、取消與持久確認設定；遠端移動以 config/workspace scope 驗證來源，使用 POSIX path，拒絕跨連線、目的地碰撞與資料夾移入自身。
+- queue finalize 將完成、失敗、取消與停止狀態一致發布到 Tree View、Status Bar 與 UI event，並使用 13 個 runtime bundle 的本地化字串。
+- SSH 自動解壓縮會先確認 `unzip` 可用，安全引用 archive／destination path，列出 ZIP 項目並阻擋絕對路徑、磁碟機路徑與 `..` 上層穿越，再依精確 exit code 判斷結果。
+- SSH `.zip` Tree 節點新增右鍵解壓縮命令；使用者確認可能覆寫後，解壓至壓縮檔所在目錄並刷新父節點。
+- Tree View 與 Explorer 的單檔比對每次重新取得遠端內容，統一本機在左、遠端在右，且不接受資料夾。
+- 聚焦測試涵蓋取消、跨工作區、碰撞、自身移動、client release、ZIP command injection／path traversal／能力／exit code、終態 UI 與 fresh remote diff。
 
-已完成同步任務錯誤／停止路徑的 Tree View／Status Bar 一致收尾，詳見 P0-1。
-
-已具備基本實作：
-
-- 拖曳本地檔案上傳與遠端節點移動都具備確認流程，並由 `SyncTools.confirmMoveOrUpload` 控制。
-- Tree View 與 Explorer 已提供單檔差異檢視，透過 `vscode.diff` 比較本地與遠端檔案。
-- 上述兩項尚缺聚焦測試，因此核對狀態維持部分完成。
-
-尚未完成的 P3 功能在開始前應先定義：
+剩餘 P3-6 雙向同步在開始前應先定義：
 
 - 使用者流程與取消行為。
 - FTP、SFTP、SSH 能力差異。
@@ -471,7 +468,7 @@ watcher ignore policy：
 | M1：可靠性 | P0-1、P0-2、P0-3、P0-4 | 任務終態、ignore、multi-root 與發布流程可預期。 |
 | M2：核心重構 | P1-1、P1-2、P1-3 | 降低 `any`、shell 與 queue 模型風險。 |
 | M3：擴展性 | P2-1、P2-2、P2-3、P2-4 | ✅ 大型工作區與高延遲 server 已具量測、改善與可回復的負載設定。 |
-| M4：產品功能 | P1-4、P1-5、P3 | 在穩定核心上補齊翻譯、信任邊界與使用者體驗。 |
+| M4：產品功能 | P1-4、P1-5、P3-1～P3-5 | ✅ 已在穩定核心上補齊翻譯、信任邊界、拖曳／移動、SSH ZIP 與單檔差異體驗；P3-6 另案處理。 |
 
 ## 暫不處理
 

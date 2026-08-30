@@ -100,5 +100,17 @@
   "Select config store directory": "选择配置文件存储目录",
   "The config store directory must be an absolute path outside every workspace.": "配置存储目录必须是所有工作区之外的绝对路径。",
   "Config store path already uses the project root.": "配置存储路径已经使用项目根目录。",
-  "Could not move configuration file(s): {0}": "无法移动配置文件：{0}"
+  "Could not move configuration file(s): {0}": "无法移动配置文件：{0}",
+  "Invalid remote path: {0}": "无效的远程路径：{0}",
+  "Only SSH ZIP files can be extracted remotely.": "只有 SSH ZIP 文件可以在远程解压。",
+  "Remote server does not provide the unzip command.": "远程服务器未提供 unzip 命令。",
+  "Remote items can only be moved within the same connection.": "远程项目只能在同一个连接内移动。",
+  "A folder cannot be moved into itself.": "文件夹不能移动到自身内部。",
+  "Remote target already exists: {0}": "远程目标已存在：{0}",
+  "Extract {0} into {1}? Existing files may be overwritten.": "是否将 {0} 解压到 {1}？现有文件可能会被覆盖。",
+  "Only files can be compared.": "只能比较文件。",
+  "Sync failed": "同步失败",
+  "Sync cancelled": "同步已取消",
+  "Sync stopped": "同步已停止",
+  "ZIP archive contains an unsafe path: {0}": "ZIP 压缩文件包含不安全的路径：{0}"
 }

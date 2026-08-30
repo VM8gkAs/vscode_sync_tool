@@ -338,6 +338,10 @@ async function uploadFileTask(item: FileTransferConfigItem, sourcePath: string) 
 
 // 比对文件任务
 async function compareFileTask(item: FileTransferConfigItem, sourcePath: string) {
+	if (isDirectory.sync(sourcePath)) {
+		await vscode.window.showErrorMessage(l10n.t('Only files can be compared.'));
+		return;
+	}
 	const remotePath = generateRemotePath(item, sourcePath);
 	const localPath = path.join(os.tmpdir(), CACHE_DIRNAME, getConfigCacheDirectoryName(item), remotePath);
 	new FileTransfer(item);
@@ -346,7 +350,7 @@ async function compareFileTask(item: FileTransferConfigItem, sourcePath: string)
 		localPath,
 		remotePath,
 		compare: true,
-		isDirectory: isDirectory.sync(sourcePath),
+		isDirectory: false,
 		operationType: 'download'
 	});
 }

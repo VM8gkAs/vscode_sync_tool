@@ -62,6 +62,12 @@
 
     - Logs are appended to `<workspace>/<logDirectory>/sync-tools.log`. The directory must be relative to the workspace and is excluded from synchronization while file logging is enabled.
 
+5. Remote ZIP Extraction and File Comparison
+
+    - In the Sync Tools Tree View, right-click an SSH `.zip` file and choose **Extract Remote ZIP**. The archive is extracted into its parent directory after confirmation because existing files may be overwritten.
+    - The remote server must provide the `unzip` command. Remote paths are passed as quoted POSIX shell arguments, and archives containing absolute, drive-qualified, or parent-traversal entry paths are rejected before extraction.
+    - **Compare File** always downloads a fresh remote copy and opens the VS Code diff editor with the local file on the left and the remote file on the right. Directories are not accepted.
+
 ### sync_config.jsonc Configuration Reference
 
 ```jsonc

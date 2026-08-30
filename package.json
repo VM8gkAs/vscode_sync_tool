@@ -159,6 +159,11 @@
         "icon": "$(compare-changes)"
       },
       {
+        "command": "sync_tools.extractRemoteArchive",
+        "title": "%SyncTools.extractRemoteArchive%",
+        "icon": "$(file-zip)"
+      },
+      {
         "command": "sync_tools.renameFile",
         "title": "%SyncTools.rename%",
         "icon": "$(notebook-edit)"
@@ -309,6 +314,11 @@
           "command": "sync_tools.compareFile",
           "when": "view == 'asyncToolsView' &&  viewItem =~ /^sync_file/",
           "group": "3_workspace@3"
+        },
+        {
+          "command": "sync_tools.extractRemoteArchive",
+          "when": "view == 'asyncToolsView' && viewItem == 'sync_file_ssh_zip'",
+          "group": "3_workspace@4"
         },
         {
           "command": "sync_tools.renameFile",

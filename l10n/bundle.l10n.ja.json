@@ -100,5 +100,17 @@
   "Select config store directory": "設定ファイル保存ディレクトリを選択",
   "The config store directory must be an absolute path outside every workspace.": "設定保存ディレクトリには、すべてのワークスペース外にある絶対パスを指定してください。",
   "Config store path already uses the project root.": "設定保存パスは既にプロジェクトルートを使用しています。",
-  "Could not move configuration file(s): {0}": "構成ファイルを移動できませんでした: {0}"
+  "Could not move configuration file(s): {0}": "構成ファイルを移動できませんでした: {0}",
+  "Invalid remote path: {0}": "無効なリモートパス: {0}",
+  "Only SSH ZIP files can be extracted remotely.": "SSH の ZIP ファイルのみリモートで展開できます。",
+  "Remote server does not provide the unzip command.": "リモートサーバーに unzip コマンドがありません。",
+  "Remote items can only be moved within the same connection.": "リモート項目は同じ接続内でのみ移動できます。",
+  "A folder cannot be moved into itself.": "フォルダーを自身の中へ移動することはできません。",
+  "Remote target already exists: {0}": "リモートの移動先は既に存在します: {0}",
+  "Extract {0} into {1}? Existing files may be overwritten.": "{0} を {1} に展開しますか？既存のファイルは上書きされる可能性があります。",
+  "Only files can be compared.": "比較できるのはファイルのみです。",
+  "Sync failed": "同期に失敗しました",
+  "Sync cancelled": "同期がキャンセルされました",
+  "Sync stopped": "同期が停止しました",
+  "ZIP archive contains an unsafe path: {0}": "ZIP アーカイブに安全でないパスが含まれています: {0}"
 }

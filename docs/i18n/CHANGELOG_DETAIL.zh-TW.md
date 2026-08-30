@@ -4,6 +4,15 @@
 
 ## 下一版本
 
+### 2026-08-30 P3-1～P3-5 完成
+- **拖曳與遠端移動**：本機拖曳支援 LF／CRLF URI 清單、取消與 POSIX 遠端路徑；遠端節點移動限制同一 config/workspace scope，禁止資料夾移入自身，不覆寫既有目的地，並保證 client 只釋放一次。
+- **同步終態**：`completed`、`failed`、`cancelled`、`stopped` 統一由 finalize 發布至 Tree View、Status Bar 與 UI event；使用者可見文字均已本地化。
+- **SSH 自動解壓縮安全**：先確認遠端提供 `unzip`，再列出 ZIP 項目並拒絕絕對路徑、Windows 磁碟機路徑與 `..` 上層穿越；archive／destination 以單一 POSIX shell 參數引用，任何非零 exit code 都保留錯誤內容。
+- **SSH 遠端右鍵解壓縮**：只有 SSH `.zip` 節點顯示命令，確認覆寫風險後解壓縮至壓縮檔所在目錄；成功後刷新父節點，失敗保留結構化診斷。
+- **單檔差異檢視**：Tree View 與 Explorer 都拒絕資料夾、重新下載遠端副本、等待 `vscode.diff`，並統一本機檔案在左、遠端檔案在右。
+- **驗證**：聚焦測試涵蓋取消、跨工作區、碰撞、自身移動、ZIP 路徑注入／穿越、能力與 exit code、終態 UI，以及 fresh remote diff；102 passing、strict typecheck、source-aware i18n、lint、production build、audit 0、VS Code 1.82／Stable 1.135.0 與暫存 VSIX（58 files、2.33 MiB；bundle 6.84 MiB）均通過。
+- **暫存 VSIX SHA-256**：`0C8B6228AA917E45433F645F3DCDF1F0A291D43C9D60A54805294F78AF70C3DD`。
+
 ### upstream `390af0d` 選擇性整合
 - **已整合**：移除 extension expiration gate；新增外部配置儲存、選擇／重置命令與自動遷移。
 - **multi-root 改寫**：路徑使用 workspace 絕對路徑的 8 字元 SHA-256 前綴形成 `<專案>-<雜湊>` 目錄，同名 workspace 不共用設定。

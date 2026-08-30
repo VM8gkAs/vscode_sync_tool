@@ -16,6 +16,7 @@
   "SyncTools.newFile": "新しいファイル",
   "SyncTools.newFolder": "新しいフォルダー",
   "SyncTools.compare": "比較",
+  "SyncTools.extractRemoteArchive": "リモート ZIP を展開",
   "SyncTools.rename": "名前を変更",
   "SyncTools.permission": "権限",
   "SyncTools.pauseSync": "同期を一時停止",

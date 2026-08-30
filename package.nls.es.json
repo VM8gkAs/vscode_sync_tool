@@ -16,6 +16,7 @@
     "SyncTools.newFile": "Nuevo archivo",
     "SyncTools.newFolder": "Nueva carpeta",
     "SyncTools.compare": "Comparar",
+    "SyncTools.extractRemoteArchive": "Extraer ZIP remoto",
     "SyncTools.rename": "Renombrar",
     "SyncTools.permission": "Permiso",
     "SyncTools.pauseSync": "Pausar sincronización",

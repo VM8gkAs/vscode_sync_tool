@@ -96,6 +96,9 @@ export class RepositoryFileNode extends TreeItem {
 		this.contextValue = file.isDirectory ? "sync_folder" : "sync_file";
 		if (this.config.type == 'ssh') {
 			this.contextValue += "_ssh";
+			if (!file.isDirectory && path.posix.extname(file.name).toLowerCase() === '.zip') {
+				this.contextValue += "_zip";
+			}
 		}
 		this.iconPath = file.isDirectory ? ThemeIcon.Folder : ThemeIcon.File;
 
@@ -165,6 +168,8 @@ export class DepNodeProvider implements vscode.TreeDataProvider<TreeItem>, vscod
 		vscode.commands.registerCommand('sync_tools.downloadFile', (resource: Dependency | RepositoryFileNode) => this.downloadFile(resource))
 		// 对比文件
 		vscode.commands.registerCommand('sync_tools.compareFile', (resource: RepositoryFileNode) => this.compareFile(resource))
+		// SSH 远端 ZIP 解压缩
+		vscode.commands.registerCommand('sync_tools.extractRemoteArchive', (resource: RepositoryFileNode) => this.extractRemoteArchive(resource))
 		// 刷新
 		vscode.commands.registerCommand('sync_tools.refreshEntry', (resource: RepositoryFileNode) => this.refreshEntry(resource, 'refresh'))
 
@@ -182,7 +187,9 @@ export class DepNodeProvider implements vscode.TreeDataProvider<TreeItem>, vscod
 		if (!target) return
 		const fileList = sources.get('text/uri-list');
 		const transferItem = sources.get('application/vnd.code.tree.asyncToolsView');
-		let files = fileList?.value.split('\r\n') || [];
+		let files = fileList?.value
+			.split(/\r?\n/)
+			.filter((value: string) => value && !value.startsWith('#')) || [];
 
 		let syncConfig = getPluginSetting()
 		const confirmMoveOrUpload = syncConfig.get<boolean>("confirmMoveOrUpload", true)
@@ -190,16 +197,18 @@ export class DepNodeProvider implements vscode.TreeDataProvider<TreeItem>, vscod
 		let len = files.length;
 		let showConfirm = false
 		for (let index = 0; index < len; index++) {
+			if (token.isCancellationRequested) return
 			let item = files[index]
 			const localPath = vscode.Uri.parse(item).fsPath// 转换为本地文件路径
 			let exist = fs.pathExistsSync(localPath)
-			if (localPath != path.sep && !transferItem && exist) {
+			const isFilesystemRoot = path.resolve(localPath) === path.parse(path.resolve(localPath)).root
+			if (!isFilesystemRoot && !transferItem && exist) {
 				let remotePath = ''
 				const isDirectory = fs.lstatSync(localPath).isDirectory()
 				if (target instanceof Dependency || target.file.isDirectory) {
-					remotePath = target.realPath
+					remotePath = getNormalPath(target.realPath)
 				} else {
-					remotePath = path.dirname(target.realPath)
+					remotePath = path.posix.dirname(getNormalPath(target.realPath))
 				}
 
 				if (!showConfirm && confirmMoveOrUpload) {
@@ -214,7 +223,7 @@ export class DepNodeProvider implements vscode.TreeDataProvider<TreeItem>, vscod
 					if (res != l10n.t('Confirm')) break
 				}
 
-				remotePath = path.join(remotePath, path.basename(localPath))
+				remotePath = path.posix.join(remotePath, path.basename(localPath))
 
 				new FileTransfer(target.config);
 				await FileTransfer.addTask({
@@ -233,63 +242,65 @@ export class DepNodeProvider implements vscode.TreeDataProvider<TreeItem>, vscod
 			return;
 		}
 		const treeItems: TreeItem[] = transferItem.value;
+		const nodes = treeItems.filter((node): node is RepositoryFileNode => node instanceof RepositoryFileNode);
+		if (nodes.length !== treeItems.length) return;
+		if (nodes.some(node => getConfigScopeKey(node.config) !== getConfigScopeKey(target.config))) {
+			await vscode.window.showErrorMessage(l10n.t('Remote items can only be moved within the same connection.'));
+			return;
+		}
 
-		let len2 = treeItems.length;
-		for (let index = 0; index < len2; index++) {
-			let node = treeItems[index]
-			if (!(node instanceof Dependency) && !(node instanceof RepositoryFileNode)) {
-				break
+		const moves = nodes.map(node => {
+			const sourcePath = getNormalPath(node.realPath);
+			const remoteDirectory = target instanceof Dependency || target.file.isDirectory
+				? getNormalPath(target.realPath)
+				: path.posix.dirname(getNormalPath(target.realPath));
+			return {
+				node,
+				sourcePath,
+				remoteDirectory: getNormalPath(remoteDirectory),
+				newPath: getNormalPath(path.posix.join(remoteDirectory, path.posix.basename(sourcePath)))
+			};
+		}).filter(move => move.newPath !== move.sourcePath);
+		if (!moves.length) return;
+
+		if (confirmMoveOrUpload) {
+			const firstMove = moves[0];
+			const multiple = moves.length > 1 ? l10n.t('multiple files or folders') : '';
+			const response = await showInformationMessage(
+				l10n.t('Are you sure you want to move {0} {1} to the {2} directory?', firstMove.node.realPath, multiple, firstMove.remoteDirectory),
+				l10n.t('Confirm'),
+				l10n.t('Cancel')
+			);
+			if (response !== l10n.t('Confirm')) return;
+		}
+
+		for (const { node, sourcePath, remoteDirectory, newPath } of moves) {
+			if (token.isCancellationRequested) return;
+			if (node.file.isDirectory && (remoteDirectory === sourcePath || remoteDirectory.startsWith(`${sourcePath}/`))) {
+				await vscode.window.showErrorMessage(l10n.t('A folder cannot be moved into itself.'));
+				continue;
 			}
-			if (node instanceof Dependency) {
-				break
-			}
-			//说明不在同一个配置中移动
-			if ((target instanceof Dependency || target instanceof RepositoryFileNode) && node.config.name !== target.config.name) {
-				break
-			}
 
-			if (node instanceof RepositoryFileNode) {
-				let { client, fileTransfer } = await this.getClient(node.config)
-				if (!client) break
-
-				let remotePath
-				if (target instanceof Dependency || target.file.isDirectory) {
-					remotePath = target.realPath
-				} else {
-					remotePath = path.dirname(target.realPath)
+			const { client, fileTransfer } = await this.getClient(node.config)
+			if (!client) return
+			try {
+				if (await this.remotePathExists(client, newPath)) {
+					await vscode.window.showErrorMessage(l10n.t('Remote target already exists: {0}', newPath));
+					continue;
 				}
+				await client.rename(sourcePath, newPath);
+				await this.refreshEntry(node, 'rename')
+				await this.refreshEntry(target, 'add')
 
-				let newPath = path.join(remotePath, path.basename(node.realPath))
-				newPath = getNormalPath(newPath)
-				if (newPath === node.realPath) {
-					continue
-				}
-				try {
-					if (!showConfirm && confirmMoveOrUpload) {
-						let msg = len2 > 1 ? l10n.t('multiple files or folders') : ""
-						let res = await showInformationMessage(
-							l10n.t(`Are you sure you want to move {0} {1} to the {2} directory?`, node.realPath, msg, getNormalPath(remotePath)),
-							l10n.t('Confirm'),
-							l10n.t('Cancel')
-						)
-						showConfirm = true
-						if (res != l10n.t('Confirm')) break
-					}
-
-					await client.rename(node.realPath, newPath);
-					await fileTransfer.releaseClient(client, node.config)
-					await this.refreshEntry(node, 'rename')
-					await this.refreshEntry(target, 'add')
-
-					this.checkToClose(node);
-					this.showLog(node.config, 'move', 'success', `${node.realPath} -> ${newPath}`)
-				} catch (err) {
-					await fileTransfer.releaseClient(client, node.config)
-					let errMsg = `${node.realPath} -> ${newPath} ${err?.toString()}`
-					this.showLog(node.config, 'move', 'error', errMsg)
-					let msg = `[move][${node.config.name}][${node.config.type}][error]`;
-					vscode.window.showErrorMessage(`${msg}：${errMsg}`)
-				}
+				this.checkToClose(node);
+				this.showLog(node.config, 'move', 'success', `${sourcePath} -> ${newPath}`)
+			} catch (err) {
+				let errMsg = `${sourcePath} -> ${newPath} ${err?.toString()}`
+				this.showLog(node.config, 'move', 'error', errMsg)
+				let msg = `[move][${node.config.name}][${node.config.type}][error]`;
+				vscode.window.showErrorMessage(`${msg}：${errMsg}`)
+			} finally {
+				await fileTransfer.releaseClient(client, node.config)
 			}
 		}
 	}
@@ -602,6 +613,15 @@ export class DepNodeProvider implements vscode.TreeDataProvider<TreeItem>, vscod
 		await fileTransfer.releaseClient(client, config)
 	}
 
+	private async remotePathExists(client: FileTransferClient, remotePath: string): Promise<boolean> {
+		if (isSFTPClient(client)) {
+			return Boolean(await client.exists(remotePath));
+		}
+		const parentPath = path.posix.dirname(remotePath);
+		const fileName = path.posix.basename(remotePath);
+		return (await client.list(parentPath)).some(file => file.name === fileName);
+	}
+
 	public getTreeItem(element: Dependency | RepositoryFileNode): vscode.TreeItem {
 		return element;
 	}
@@ -853,7 +873,7 @@ export class DepNodeProvider implements vscode.TreeDataProvider<TreeItem>, vscod
 		}
 
 		try {
-			if (fs.existsSync(filePath) && !obj.isNew) {
+			if (fs.existsSync(filePath) && !obj.isNew && !comparePath) {
 				await this.releaseClient(client, obj.config);
 				return await this.showRemoteFile(filePath, comparePath, uri, obj)
 			}
@@ -960,7 +980,7 @@ export class DepNodeProvider implements vscode.TreeDataProvider<TreeItem>, vscod
 			vscode.workspace.fs.writeFile(uri, content);
 			if (comparePath) {
 				// 执行对比命令
-				vscode.commands.executeCommand('vscode.diff', vscode.Uri.file(filePath), vscode.Uri.file(comparePath), `${l10n.t('Remote file')} ↔ ${l10n.t('Local file')}: ${obj.file.name}`);
+				await vscode.commands.executeCommand('vscode.diff', vscode.Uri.file(comparePath), vscode.Uri.file(filePath), `${l10n.t('Local file')} ↔ ${l10n.t('Remote file')}: ${obj.file.name}`);
 			} else {
 				const document = await vscode.workspace.openTextDocument(uri);
 				vscode.window.showTextDocument(document, {
@@ -1118,11 +1138,49 @@ export class DepNodeProvider implements vscode.TreeDataProvider<TreeItem>, vscod
 	}
 
 	async compareFile(obj: RepositoryFileNode) {
+		if (obj.file.isDirectory) {
+			return vscode.window.showErrorMessage(l10n.t('Only files can be compared.'));
+		}
 		let localPath = path.join(obj.config.downloadPath || obj.config.workspaceRoot || '', obj.config.type == 'ftp' ? obj.realPath : path.relative(obj.config.remotePath, obj.realPath))
 		if (!fs.existsSync(localPath)) {
 			return vscode.window.showErrorMessage(`${l10n.t('Local file {0} does not exist', localPath)}`);
 		}
 		await this.openResource(obj, localPath);
+	}
+
+	async extractRemoteArchive(obj: RepositoryFileNode) {
+		if (
+			obj.config.type !== 'ssh'
+			|| obj.file.isDirectory
+			|| path.posix.extname(obj.realPath).toLowerCase() !== '.zip'
+		) {
+			return vscode.window.showErrorMessage(l10n.t('Only SSH ZIP files can be extracted remotely.'));
+		}
+
+		const destinationPath = path.posix.dirname(obj.realPath);
+		const response = await showInformationMessage(
+			l10n.t('Extract {0} into {1}? Existing files may be overwritten.', obj.realPath, destinationPath),
+			l10n.t('Confirm'),
+			l10n.t('Cancel')
+		);
+		if (response !== l10n.t('Confirm')) return;
+
+		const { client, fileTransfer } = await this.getClient(obj.config);
+		if (!client) return;
+		try {
+			if (!isSFTPClient(client)) {
+				throw new Error(l10n.t('Only SSH ZIP files can be extracted remotely.'));
+			}
+			await fileTransfer.unzipRemoteFile(client, obj.realPath, destinationPath);
+			this.showLog(obj.config, 'extract', 'success', `${obj.realPath} -> ${destinationPath}`);
+			await this.refreshEntry(obj.parent, 'refresh');
+		} catch (err) {
+			const errMsg = `${obj.realPath} ${err?.toString()}`;
+			this.showLog(obj.config, 'extract', 'error', errMsg);
+			vscode.window.showErrorMessage(`[extract][${obj.config.name}][${obj.config.type}][error]：${errMsg}`);
+		} finally {
+			await fileTransfer.releaseClient(client, obj.config);
+		}
 	}
 
 

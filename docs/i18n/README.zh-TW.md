@@ -50,6 +50,11 @@
    • 需在專案配置中設置 `proxy = true`  
    ![代理配置](https://cdn.jsdelivr.net/gh/oorzc/public_img@main/img/2024%2F11%2F12%2F9f00f0451dd2c558ad469178d0058713.png)  
 
+4. **遠端 ZIP 解壓縮與檔案比對**
+   - 在 Sync Tools Tree View 對 SSH `.zip` 檔案按右鍵，選擇 **解壓縮遠端 ZIP**；確認後會解壓縮至壓縮檔所在目錄，既有檔案可能被覆寫。
+   - 遠端伺服器必須提供 `unzip` 命令。遠端路徑會以 POSIX shell 參數安全引用，含絕對路徑、磁碟機路徑或 `..` 上層穿越項目的 ZIP 會在解壓縮前被拒絕。
+   - **比對檔案**每次都會重新下載遠端內容，並以本機檔案在左、遠端檔案在右開啟 VS Code diff；不接受資料夾。
+
 **`sync_config.jsonc` 範例**  
 
 ```jsonc

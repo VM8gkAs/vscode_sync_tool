@@ -100,5 +100,17 @@
   "Select config store directory": "설정 파일 저장 디렉토리 선택",
   "The config store directory must be an absolute path outside every workspace.": "설정 저장 디렉터리는 모든 작업 영역 밖의 절대 경로여야 합니다.",
   "Config store path already uses the project root.": "설정 저장 경로가 이미 프로젝트 루트를 사용합니다.",
-  "Could not move configuration file(s): {0}": "구성 파일을 이동할 수 없습니다: {0}"
+  "Could not move configuration file(s): {0}": "구성 파일을 이동할 수 없습니다: {0}",
+  "Invalid remote path: {0}": "잘못된 원격 경로: {0}",
+  "Only SSH ZIP files can be extracted remotely.": "SSH ZIP 파일만 원격으로 압축을 풀 수 있습니다.",
+  "Remote server does not provide the unzip command.": "원격 서버에서 unzip 명령을 제공하지 않습니다.",
+  "Remote items can only be moved within the same connection.": "원격 항목은 동일한 연결 내에서만 이동할 수 있습니다.",
+  "A folder cannot be moved into itself.": "폴더를 자기 자신 안으로 이동할 수 없습니다.",
+  "Remote target already exists: {0}": "원격 대상이 이미 존재합니다: {0}",
+  "Extract {0} into {1}? Existing files may be overwritten.": "{0}을(를) {1}에 압축 해제할까요? 기존 파일을 덮어쓸 수 있습니다.",
+  "Only files can be compared.": "파일만 비교할 수 있습니다.",
+  "Sync failed": "동기화 실패",
+  "Sync cancelled": "동기화 취소됨",
+  "Sync stopped": "동기화 중지됨",
+  "ZIP archive contains an unsafe path: {0}": "ZIP 아카이브에 안전하지 않은 경로가 포함되어 있습니다: {0}"
 }

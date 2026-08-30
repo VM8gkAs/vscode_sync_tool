@@ -16,6 +16,7 @@
   "SyncTools.newFile": "新建檔案",
   "SyncTools.newFolder": "新建資料夾",
   "SyncTools.compare": "比對",
+  "SyncTools.extractRemoteArchive": "解壓縮遠端 ZIP",
   "SyncTools.rename": "重新命名",
   "SyncTools.permission": "權限",
   "SyncTools.pauseSync": "暫停同步",

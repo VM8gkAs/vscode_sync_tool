@@ -16,6 +16,7 @@
   "SyncTools.newFile": "새 파일",
   "SyncTools.newFolder": "새 폴더",
   "SyncTools.compare": "비교",
+  "SyncTools.extractRemoteArchive": "원격 ZIP 압축 풀기",
   "SyncTools.rename": "이름 바꾸기",
   "SyncTools.permission": "권한",
   "SyncTools.pauseSync": "동기화 일시 정지",

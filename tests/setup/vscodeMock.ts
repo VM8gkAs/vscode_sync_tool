@@ -42,6 +42,9 @@ export const vscodeMock: any = {
 		isTrusted: true,
 		workspaceFolders: [] as { uri: { fsPath: string } }[],
 		textDocuments: [] as any[],
+		fs: {
+			writeFile: async () => undefined
+		},
 		getWorkspaceFolder: (uri: { fsPath: string }) => {
 			return vscodeMock.workspace.workspaceFolders.find((folder: { uri: { fsPath: string } }) => {
 				const relative = path.relative(folder.uri.fsPath, uri.fsPath);

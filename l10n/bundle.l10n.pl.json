@@ -100,5 +100,17 @@
   "Select config store directory": "Wybierz katalog przechowywania konfiguracji",
   "The config store directory must be an absolute path outside every workspace.": "Katalog konfiguracji musi być ścieżką bezwzględną poza wszystkimi obszarami roboczymi.",
   "Config store path already uses the project root.": "Ścieżka konfiguracji używa już katalogu głównego projektu.",
-  "Could not move configuration file(s): {0}": "Nie można przenieść plików konfiguracji: {0}"
+  "Could not move configuration file(s): {0}": "Nie można przenieść plików konfiguracji: {0}",
+  "Invalid remote path: {0}": "Nieprawidłowa ścieżka zdalna: {0}",
+  "Only SSH ZIP files can be extracted remotely.": "Zdalnie można rozpakować tylko pliki ZIP przez SSH.",
+  "Remote server does not provide the unzip command.": "Serwer zdalny nie udostępnia polecenia unzip.",
+  "Remote items can only be moved within the same connection.": "Elementy zdalne można przenosić tylko w ramach tego samego połączenia.",
+  "A folder cannot be moved into itself.": "Folderu nie można przenieść do niego samego.",
+  "Remote target already exists: {0}": "Zdalny cel już istnieje: {0}",
+  "Extract {0} into {1}? Existing files may be overwritten.": "Rozpakować {0} do {1}? Istniejące pliki mogą zostać nadpisane.",
+  "Only files can be compared.": "Porównywać można tylko pliki.",
+  "Sync failed": "Synchronizacja nie powiodła się",
+  "Sync cancelled": "Synchronizacja anulowana",
+  "Sync stopped": "Synchronizacja zatrzymana",
+  "ZIP archive contains an unsafe path: {0}": "Archiwum ZIP zawiera niebezpieczną ścieżkę: {0}"
 }

@@ -6,6 +6,7 @@ import {
 	installVscodeMock,
 	resetVscodeMock,
 	setConfigurationValue,
+	vscodeMock,
 	vscodeMockOutput,
 	vscodeMockExtensionContext
 } from './setup/vscodeMock';
@@ -127,6 +128,61 @@ describe('FileTransfer queue finalization', () => {
 		assert.strictEqual(FileTransfer.finalizedQueues.has(scopeKey(config)), true);
 		await transfer.finalizeQueue(config, 'completed');
 		assert.strictEqual(FileTransfer.queueTerminalStates[scopeKey(config)], 'failed');
+	});
+
+	it('publishes the terminal state to the status bar and UI event', async () => {
+		const config = createConfig();
+		const transfer = new FileTransfer(config);
+		const { myEvent } = require('../src/events/myEvent');
+		const { StatusBarUi } = require('../src/statusBar');
+		let terminalEvent: any;
+		const subscription = myEvent.event((event: any) => {
+			if (event?.type === 'refreshSyncStatus') terminalEvent = event;
+		});
+
+		await transfer.finalizeQueue(config, 'failed');
+
+		assert.strictEqual(terminalEvent.terminalState, 'failed');
+		assert.strictEqual(terminalEvent.workspaceRoot, workspaceRoot);
+		assert.match((StatusBarUi as any)._statusBarItem.text, /failed/);
+		subscription.dispose();
+	});
+
+	it('opens Explorer comparisons with local on the left and remote on the right', async () => {
+		const config = createConfig();
+		config.watch = false;
+		const transfer = new FileTransfer(config);
+		const localSourcePath = path.join(workspaceRoot, 'file.txt');
+		const remoteCopyPath = path.join(workspaceRoot, '.remote', 'file.txt');
+		fs.writeFileSync(localSourcePath, 'local');
+		transfer.getClient = async () => ({});
+		transfer.releaseClient = async () => undefined;
+		transfer.downloadFile = async () => {
+			fs.mkdirSync(path.dirname(remoteCopyPath), { recursive: true });
+			fs.writeFileSync(remoteCopyPath, 'remote');
+		};
+		transfer.addMaxConcurrency = async () => undefined;
+		const originalExecuteCommand = vscodeMock.commands.executeCommand;
+		let commandArgs: any[] = [];
+		vscodeMock.commands.executeCommand = async (...args: any[]) => { commandArgs = args; };
+
+		try {
+			await FileTransfer.addTask({
+				config,
+				localPath: remoteCopyPath,
+				remotePath: '/remote/file.txt',
+				operationType: 'download',
+				compare: true,
+				isDirectory: false
+			});
+			await waitForFinalization(config);
+
+			assert.strictEqual(commandArgs[0], 'vscode.diff');
+			assert.strictEqual(commandArgs[1].fsPath, localSourcePath);
+			assert.strictEqual(commandArgs[2].fsPath, remoteCopyPath);
+		} finally {
+			vscodeMock.commands.executeCommand = originalExecuteCommand;
+		}
 	});
 
 	it('uses the latest scoped config when a queue drain finalizes', async () => {

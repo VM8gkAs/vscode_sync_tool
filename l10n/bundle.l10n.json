@@ -100,5 +100,17 @@
   "Select config store directory": "Select config store directory",
   "The config store directory must be an absolute path outside every workspace.": "The config store directory must be an absolute path outside every workspace.",
   "Config store path already uses the project root.": "Config store path already uses the project root.",
-  "Could not move configuration file(s): {0}": "Could not move configuration file(s): {0}"
+  "Could not move configuration file(s): {0}": "Could not move configuration file(s): {0}",
+  "Invalid remote path: {0}": "Invalid remote path: {0}",
+  "Only SSH ZIP files can be extracted remotely.": "Only SSH ZIP files can be extracted remotely.",
+  "Remote server does not provide the unzip command.": "Remote server does not provide the unzip command.",
+  "Remote items can only be moved within the same connection.": "Remote items can only be moved within the same connection.",
+  "A folder cannot be moved into itself.": "A folder cannot be moved into itself.",
+  "Remote target already exists: {0}": "Remote target already exists: {0}",
+  "Extract {0} into {1}? Existing files may be overwritten.": "Extract {0} into {1}? Existing files may be overwritten.",
+  "Only files can be compared.": "Only files can be compared.",
+  "Sync failed": "Sync failed",
+  "Sync cancelled": "Sync cancelled",
+  "Sync stopped": "Sync stopped",
+  "ZIP archive contains an unsafe path: {0}": "ZIP archive contains an unsafe path: {0}"
 }
