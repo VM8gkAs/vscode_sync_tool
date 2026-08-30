@@ -39,5 +39,8 @@
   "SyncTools.openFileSizeLimit": "Запрос при открытии файла по размеру. По умолчанию 5 Мб.",
   "SyncTools.uploadTaskNumber": "При каком количестве загрузок использовать параллельную загрузку. По умолчанию 10.",
   "SyncTools.uploadConcurrentLimit": "Настройка ограничения параллельной загрузки: минимальное количество параллельных задач - 1, максимальное - 100, по умолчанию - 3.",
+  "SyncTools.selectConfigStorePath": "Выбрать каталог хранения конфигурации",
+  "SyncTools.resetConfigStorePath": "Сбросить путь хранения конфигурации (использовать корень проекта)",
+  "SyncTools.configStorePath.description": "Внешний каталог для файлов конфигурации. Используйте **Sync Tools: Выбрать каталог хранения конфигурации** (`sync_tools.selectConfigStorePath`). `sync_config.jsonc` сохраняется в `<путь>/<проект>-<хеш>/sync_config.jsonc`. Оставьте пустым, чтобы использовать корень проекта.",
   "SyncTools.proxyConfig.description": "[Документация по настройке](https://www.npmjs.com/package/socks) \n\n Пример настройки:\n\n ```js \n{\n   \"proxyHost\": \"127.0.0.1\", // ipv4, ipv6 или имя хоста \n   \"proxyPort\": 7890, \n   \"proxyUsername\": \"\", // Используется для аутентификации userId в SOCKS4 и аутентификации user/pass в SOCKS5 в сочетании с паролем.\n   \"proxyPassword\": \"\", // Используется в сочетании с userId для аутентификации пользователя/пароля прокси SOCKS5.\n   \"proxyType\": 5 // Версия прокси (4 или 5). Используйте 4 для v4a и 5 для v5h.\n}\n ```"
 }

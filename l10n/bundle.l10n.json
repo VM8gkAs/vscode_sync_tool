@@ -94,5 +94,11 @@
   "Build command requires a trusted workspace. Trust the workspace and start synchronization again.": "Build command requires a trusted workspace. Trust the workspace and start synchronization again.",
   "File is outside the workspace: {0}": "File is outside the workspace: {0}",
   "Upload failed": "Upload failed",
-  "Failed to connect: {0}": "Failed to connect: {0}"
+  "Failed to connect: {0}": "Failed to connect: {0}",
+  "A configuration file already exists at {0}.": "A configuration file already exists at {0}.",
+  "Move {0} configuration file(s) to the selected location?": "Move {0} configuration file(s) to the selected location?",
+  "Select config store directory": "Select config store directory",
+  "The config store directory must be an absolute path outside every workspace.": "The config store directory must be an absolute path outside every workspace.",
+  "Config store path already uses the project root.": "Config store path already uses the project root.",
+  "Could not move configuration file(s): {0}": "Could not move configuration file(s): {0}"
 }

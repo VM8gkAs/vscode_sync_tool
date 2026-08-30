@@ -2,6 +2,18 @@
 
 > 用於記錄每次版本的詳細改動，便於後續追蹤、回溯與驗證。
 
+## 下一版本
+
+### upstream `390af0d` 選擇性整合
+- **已整合**：移除 extension expiration gate；新增外部配置儲存、選擇／重置命令與自動遷移。
+- **multi-root 改寫**：路徑使用 workspace 絕對路徑的 8 字元 SHA-256 前綴形成 `<專案>-<雜湊>` 目錄，同名 workspace 不共用設定。
+- **資料安全**：只接受所有 workspace 外的絕對目錄；先複製、成功更新設定後才移除來源，取消不改位置，既有目標永不覆寫。
+- **失敗回復**：複製或全域設定更新失敗時會移除已暫存目標、保留全部來源並顯示本地化錯誤，不會讓 activation 因搬移 I/O 錯誤中止。
+- **cache／編輯整合**：外部設定儲存後會清除 workspace-scoped config cache、關閉舊連線並更新 Tree；在 VS Code 儲存外部 `sync_config.jsonc` 也會重載。
+- **未整合**：`.cursor/rules/pchat.mdc`、生成的 `types/`／copy 檔、upstream `0.5.1` metadata，以及未經本專案測試的 vendored `ssh2-sftp-client` 改寫。
+- **驗證**：新增 5 項外部設定儲存測試，合計 80 passing；strict typecheck、source-aware i18n、lint、production build、audit 0、VS Code 1.82／Stable 1.135.0 與暫存 VSIX（58 files、2.35 MiB）均通過；bundle 為 6.93 MiB。
+- **暫存 VSIX SHA-256**：`C5018C8DEA29ADDAF16D4CFD69E1903F8E6FB5F480C89CFD38F2806026D44AF3`。
+
 ## v0.6.3（2026-07-17）
 
 ### 2026-08-30 P1 本地化與 Workspace Trust 收尾

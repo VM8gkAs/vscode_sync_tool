@@ -94,5 +94,11 @@
   "Build command requires a trusted workspace. Trust the workspace and start synchronization again.": "Polecenie kompilacji wymaga zaufanego obszaru roboczego. Oznacz go jako zaufany i ponownie uruchom synchronizację.",
   "File is outside the workspace: {0}": "Plik znajduje się poza obszarem roboczym: {0}",
   "Upload failed": "Przesyłanie nie powiodło się",
-  "Failed to connect: {0}": "Połączenie nie powiodło się: {0}"
+  "Failed to connect: {0}": "Połączenie nie powiodło się: {0}",
+  "A configuration file already exists at {0}.": "Plik konfiguracyjny już istnieje w {0}.",
+  "Move {0} configuration file(s) to the selected location?": "Przenieść {0} plik(i) konfiguracyjny(e) do wybranej lokalizacji?",
+  "Select config store directory": "Wybierz katalog przechowywania konfiguracji",
+  "The config store directory must be an absolute path outside every workspace.": "Katalog konfiguracji musi być ścieżką bezwzględną poza wszystkimi obszarami roboczymi.",
+  "Config store path already uses the project root.": "Ścieżka konfiguracji używa już katalogu głównego projektu.",
+  "Could not move configuration file(s): {0}": "Nie można przenieść plików konfiguracji: {0}"
 }

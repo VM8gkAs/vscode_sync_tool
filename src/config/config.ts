@@ -4,3 +4,5 @@ export const URI_SCHEME = 'async-tools';
 // 缓存目录
 export const CACHE_DIRNAME = 'sync_tools';
 
+export const CONFIG_FILENAME = 'sync_config.jsonc';
+

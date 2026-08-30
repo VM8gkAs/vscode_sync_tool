@@ -39,5 +39,8 @@
   "SyncTools.openFileSizeLimit": "ファイルを開く際のサイズの確認、デフォルトは5 Mb",
   "SyncTools.uploadTaskNumber": "アップロード数がいくつ以上の場合に並列アップロードを使用するか、デフォルトは10",
   "SyncTools.uploadConcurrentLimit": "アップロードの並列制限設定：並列数の最小値は1、最大値は100、デフォルトは3",
+  "SyncTools.selectConfigStorePath": "設定ファイル保存ディレクトリを選択",
+  "SyncTools.resetConfigStorePath": "設定ファイル保存パスをリセット（プロジェクトルートを使用）",
+  "SyncTools.configStorePath.description": "設定ファイル用の外部ディレクトリです。**Sync Tools: 設定ファイル保存ディレクトリを選択** (`sync_tools.selectConfigStorePath`) を使用してください。`sync_config.jsonc` は `<パス>/<プロジェクト>-<ハッシュ>/sync_config.jsonc` に保存されます。空の場合はプロジェクトルートを使用します。",
   "SyncTools.proxyConfig.description": "[設定ドキュメント](https://www.npmjs.com/package/socks) \n\n 設定例： \n\n ```js \n{\n   \"proxyHost\": \"127.0.0.1\", // ipv4、ipv6またはホスト名 \n   \"proxyPort\": 7890, \n   \"proxyUsername\": \"\", // SOCKS4のuserId認証、およびSOCKS5のuser/pass認証でパスワードと組み合わせて使用されます。 \n   \"proxyPassword\": \"\", // SOCKS5プロキシのユーザー/パスワード認証でuserIdと組み合わせて使用されます。 \n   \"proxyType\": 5 // プロキシのバージョン（4または5）。v4aの場合は4、v5hの場合は5を使用します。 \n}\n ```"
 }

@@ -94,5 +94,11 @@
   "Build command requires a trusted workspace. Trust the workspace and start synchronization again.": "构建命令需要受信任的工作区。请信任此工作区后重新启动同步。",
   "File is outside the workspace: {0}": "文件位于工作区之外：{0}",
   "Upload failed": "上传失败",
-  "Failed to connect: {0}": "连接失败：{0}"
+  "Failed to connect: {0}": "连接失败：{0}",
+  "A configuration file already exists at {0}.": "{0} 已存在配置文件。",
+  "Move {0} configuration file(s) to the selected location?": "是否将 {0} 个配置文件移动到所选位置？",
+  "Select config store directory": "选择配置文件存储目录",
+  "The config store directory must be an absolute path outside every workspace.": "配置存储目录必须是所有工作区之外的绝对路径。",
+  "Config store path already uses the project root.": "配置存储路径已经使用项目根目录。",
+  "Could not move configuration file(s): {0}": "无法移动配置文件：{0}"
 }

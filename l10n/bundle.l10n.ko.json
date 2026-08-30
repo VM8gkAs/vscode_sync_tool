@@ -94,5 +94,11 @@
   "Build command requires a trusted workspace. Trust the workspace and start synchronization again.": "빌드 명령에는 신뢰할 수 있는 작업 영역이 필요합니다. 작업 영역을 신뢰한 후 동기화를 다시 시작하세요.",
   "File is outside the workspace: {0}": "파일이 작업 영역 밖에 있습니다: {0}",
   "Upload failed": "업로드 실패",
-  "Failed to connect: {0}": "연결 실패: {0}"
+  "Failed to connect: {0}": "연결 실패: {0}",
+  "A configuration file already exists at {0}.": "{0}에 설정 파일이 이미 있습니다.",
+  "Move {0} configuration file(s) to the selected location?": "설정 파일 {0}개를 선택한 위치로 이동할까요?",
+  "Select config store directory": "설정 파일 저장 디렉토리 선택",
+  "The config store directory must be an absolute path outside every workspace.": "설정 저장 디렉터리는 모든 작업 영역 밖의 절대 경로여야 합니다.",
+  "Config store path already uses the project root.": "설정 저장 경로가 이미 프로젝트 루트를 사용합니다.",
+  "Could not move configuration file(s): {0}": "구성 파일을 이동할 수 없습니다: {0}"
 }

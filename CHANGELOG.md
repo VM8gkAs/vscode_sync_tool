@@ -5,6 +5,17 @@
 - [繁體中文](docs/i18n/CHANGELOG.zh-TW.md)
 - [詳細變更追蹤（繁體中文）](docs/i18n/CHANGELOG_DETAIL.zh-TW.md)
 
+## Next Version
+
+### Added
+- Added `SyncTools.configStorePath` plus commands to select or reset an external `sync_config.jsonc` directory. Multi-root workspaces use stable `<project>-<hash>` directories, same-name projects remain isolated, and existing target files are never overwritten.
+- Added focused coverage for external-path validation, project-root migration fallback, same-name workspace isolation, external configuration loading without `.gitignore` mutation, and relocation rollback after an I/O failure.
+
+### Changed
+- Removed the encrypted extension expiration gate; extension activation no longer stops at a hard-coded date.
+- Adapted the upstream external-config idea to the current multi-root and cache model instead of importing upstream generated files, repository agent rules, or vendored SFTP changes.
+- Configuration relocation now rolls back staged copies and reports a localized error if copying or updating the global setting fails, so an I/O error does not abort extension activation.
+
 ## v0.6.3 (2026-07-17)
 
 ### Added

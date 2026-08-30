@@ -14,7 +14,9 @@
 - 2026-07-31 依實機測試修正 `tools/**` 目錄根漏接與資料夾新增後立即改名的 stale upload；失效任務不再重試或先建立舊遠端目錄，並完成新公告依賴漏洞修補與完整閘門。
 - 2026-08-30 修正 watch 資料夾待辦展開後重用父目錄遠端路徑的問題；每個子檔現在都保留完整 workspace-relative suffix。
 - 2026-08-30 完成 P1-4／P1-5：核心訊息與 Build 術語已統一，untrusted workspace 不會執行 `config.build`，async Promise executor 已移除並補齊聚焦測試。
-- 下一步先完成經審查的 upstream 功能整合，再依序處理 P3。
+- 2026-08-30 完成 upstream `390af0d` 選擇性整合：移除到期閘門，並以 multi-root、安全搬移、失敗回復與 cache reload 重新實作外部配置儲存；未帶入 agent rule、生成檔與 vendored SFTP 改寫。
+- 本機 `upstream-main` 已精確指向 upstream `390af0d`；推送 `origin/upstream-main` 因 GitHub HTTPS token 無效而待重新認證，未影響本機整合與驗證。
+- 下一步依序處理 P3。
 - 目前不追最新版工具鏈；build baseline 維持 Node 22、pnpm 10、VS Code `^1.82.0`。
 
 ## 開發項目核對表
@@ -87,10 +89,11 @@ P2 處理結果（原審查項目）：
 
 - 技術：TypeScript、VS Code Extension API、Webpack；build／CI 使用 Node 22 與 pnpm 10，擴充套件執行期最低為 VS Code 1.82／Node 18。
 - 正式版本：`0.6.3`；後續 VSIX 重建應產生 `ssh-tools-0.6.3.vsix`，不得再以 `0.6.2` 覆蓋新改動。
-- 測試：Mocha，現有 75 個聚焦測試。
+- 測試：Mocha，現有 80 個聚焦測試。
 - 發布入口：`dist/extension.js`，VSIX 使用 `--no-dependencies` 打包。
 - 正式依賴安全稽核：0 vulnerabilities。
 - 最近驗證：
+  - 2026-08-30 upstream 選擇性整合：80 passing、strict typecheck、source-aware i18n、lint error gate、production build、production audit（0 vulnerabilities）、VS Code 1.82／Stable 1.135.0 Extension Host 與暫存 VSIX（58 files、2.35 MiB；bundle 6.93 MiB）均通過；SHA-256 `C5018C8DEA29ADDAF16D4CFD69E1903F8E6FB5F480C89CFD38F2806026D44AF3`。
   - 2026-08-30 P1 完成與 v0.6.3 重建：75 passing、strict typecheck、source-aware i18n、lint error gate、production build、production audit（0 vulnerabilities）、VS Code 1.82／Stable 1.135.0 Extension Host 與 VSIX 實包（58 files、2.37 MiB）均通過；SHA-256 `F3F6438100AD1DF9A5B610171F9089567DF43B6BC450F476C729CE54EBED3DB9`。
   - 2026-08-30 watch 資料夾上傳路徑修正：69 passing、strict typecheck、i18n、lint error gate、production build、production audit（0 vulnerabilities）、VS Code 1.82／Stable 1.135.0 Extension Host 與 VSIX 實包（58 files、2.34 MiB）均通過。
   - 2026-07-31 v0.6.3 實測回歸修正：68 passing、strict typecheck、i18n、lint error gate、production build、production audit（0 vulnerabilities）、VS Code 1.82／Stable 1.131.0 Extension Host 與 VSIX 實包（58 files、2.32 MiB）均通過。

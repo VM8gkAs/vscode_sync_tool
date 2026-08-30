@@ -39,5 +39,8 @@
   "SyncTools.openFileSizeLimit": "打开文件大小询问，默认为5 Mb",
   "SyncTools.uploadTaskNumber": "当上传数量大于多少时使用并发上传，默认为10",
   "SyncTools.uploadConcurrentLimit": "上传并发量配置：并发量最小为1，最大为100，默认为3",
+  "SyncTools.selectConfigStorePath": "选择配置文件存储目录",
+  "SyncTools.resetConfigStorePath": "重置配置文件存储路径（使用项目根目录）",
+  "SyncTools.configStorePath.description": "配置文件的外部存储目录。请使用 **Sync Tools: 选择配置文件存储目录** (`sync_tools.selectConfigStorePath`)。`sync_config.jsonc` 将存储在 `<路径>/<项目>-<哈希>/sync_config.jsonc`。留空则使用项目根目录。",
   "SyncTools.proxyConfig.description": "[配置文档](https://www.npmjs.com/package/socks) \n\n 配置参考：\n\n ```js \n{\n   \"proxyHost\": \"127.0.0.1\", // ipv4、ipv6 或主机名 \n   \"proxyPort\": 7890, \n   \"proxyUsername\": \"\", // 用于 SOCKS4 userId 身份验证，以及与密码结合的 SOCKS5 user/pass 身份验证。\n   \"proxyPassword\": \"\", // 与 userId 结合使用，用于 SOCKS5 代理的用户/密码身份验证。\n   \"proxyType\": 5 // 代理版本（4 或 5）。对于 v4a 使用 4，对于 v5h 使用 5。\n}\n ```"
 }

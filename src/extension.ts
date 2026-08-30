@@ -4,8 +4,8 @@ import * as path from "path"
 import * as vscode from "vscode"
 import { l10n } from "vscode"
 import { FileTransferConfigItem, opType, Task } from './types/config';
-import { CACHE_DIRNAME, URI_SCHEME } from './config/config';
-import { addConfig, getUserConfig, toArray, getRootPath, getIgnoreConfig, debounce, generateRandomPassword, getPluginSetting, sleep, showInformationMessage, posixRelative, oConsole, getWorkspaceRoots, getWorkspaceStateKey, getConfigScopeKey, getConfigCacheDirectoryName, resolveWatchChangeForIgnore } from "./utils"
+import { CACHE_DIRNAME, CONFIG_FILENAME, URI_SCHEME } from './config/config';
+import { addConfig, getUserConfig, toArray, getRootPath, getIgnoreConfig, debounce, generateRandomPassword, getPluginSetting, sleep, showInformationMessage, posixRelative, oConsole, getWorkspaceRoots, getWorkspaceStateKey, getConfigScopeKey, getConfigCacheDirectoryName, resolveWatchChangeForIgnore, copyConfigFilesTransactionally, getConfigFilePath, getPreferredConfigFilePath } from "./utils"
 import { uploadOnSave } from "./events/uploadOnSave"
 import { myEvent } from "./events/myEvent"
 import { DepNodeProvider } from "./treeProvider"
@@ -18,7 +18,6 @@ import { CodeLensProvider, handleEncryptionOrDecryption } from "./CodeLensProvid
 import { clearWatchCache, flushAllWatchCacheUpdates, queueWatchCacheUpdate } from "./watchCache"
 
 const isDirectory = require("is-directory")
-var CryptoJS = require("crypto-js")
 
 let treeProvider: DepNodeProvider
 let TreeView: vscode.TreeView<vscode.TreeItem>
@@ -33,6 +32,76 @@ let saveFiles: Set<string> = new Set();
 // upload_on_save 延迟上传计时器（同一配置+同一路径只保留最后一次触发）
 const uploadOnSaveTimers: Map<string, NodeJS.Timeout> = new Map();
 
+function sameFilePath(first: string, second: string): boolean {
+	const normalize = (value: string) => process.platform === "win32"
+		? path.resolve(value).toLowerCase()
+		: path.resolve(value)
+	return normalize(first) === normalize(second)
+}
+
+async function relocateConfigFiles(
+	context: vscode.ExtensionContext,
+	storePath: string,
+	updateSetting: boolean
+): Promise<boolean> {
+	const relocations = getWorkspaceRoots()
+		.map(rootPath => ({
+			rootPath,
+			sourcePath: getConfigFilePath(rootPath),
+			targetPath: getPreferredConfigFilePath(rootPath, storePath)
+		}))
+		.filter(item => !sameFilePath(item.sourcePath, item.targetPath) && fs.existsSync(item.sourcePath));
+
+	for (const { targetPath } of relocations) {
+		if (fs.existsSync(targetPath)) {
+			await vscode.window.showErrorMessage(l10n.t('A configuration file already exists at {0}.', targetPath));
+			return false;
+		}
+	}
+
+	if (relocations.length > 0) {
+		const confirm = l10n.t('Confirm');
+		const selection = await vscode.window.showInformationMessage(
+			l10n.t('Move {0} configuration file(s) to the selected location?', relocations.length),
+			confirm,
+			l10n.t('Cancel')
+		);
+		if (selection !== confirm) return false;
+	}
+
+	try {
+		await copyConfigFilesTransactionally(relocations, async () => {
+			if (updateSetting) {
+				await getPluginSetting().update('configStorePath', storePath, vscode.ConfigurationTarget.Global);
+			}
+		});
+	} catch (error) {
+		const detail = error instanceof Error ? error.message : String(error);
+		oConsole.error(`[config:migrate][error] ${detail}`);
+		await vscode.window.showErrorMessage(l10n.t('Could not move configuration file(s): {0}', detail));
+		return false;
+	}
+
+	for (const { rootPath, sourcePath } of relocations) {
+		try {
+			await fs.remove(sourcePath);
+		} catch (error) {
+			oConsole.error(`[config:migrate][cleanup][error] ${sourcePath}: ${error}`);
+		}
+		await context.workspaceState.update(getWorkspaceStateKey('sync_config', rootPath), '');
+	}
+	return true;
+}
+
+async function reloadWorkspaceConfigs(context: vscode.ExtensionContext): Promise<void> {
+	await FileTransfer.closeAll();
+	for (const rootPath of getWorkspaceRoots()) {
+		await context.workspaceState.update(getWorkspaceStateKey('sync_config', rootPath), '');
+		await getUserConfig(2, 2, rootPath);
+	}
+	myEvent.fire('updateMenu');
+}
+
 // TODO 添加ssh右键解压功能，有同步任务时需要刷新同步状态
 // TODO 释放git操作exec
 // TODO 检查忽略文件提交
@@ -41,18 +110,15 @@ const uploadOnSaveTimers: Map<string, NodeJS.Timeout> = new Map();
 
 // 激活事件
 export async function activate(context: vscode.ExtensionContext) {
-	// 获取当前时间的毫秒数
-	const milliseconds = new Date().getTime();
-	let time = CryptoJS.AES.decrypt('U2FsdGVkX19CoaRbhDz6/FWnCxS+cCx2G6uRzAHsi2Y=', 'sync_tools').toString(CryptoJS.enc.Utf8)
-	if (time < milliseconds) {
-		return vscode.window.showInformationMessage(l10n.t('thePluginHasExpiredPleaseDownloadTheLatestVersion'))
-	}
-
 	// 在扩展启动时，将 context 设置为全局变量
 	setContext(context)
 
 	for (const workspaceRoot of getWorkspaceRoots()) {
 		await context.workspaceState.update(getWorkspaceStateKey("sync_config", workspaceRoot), "")
+	}
+	const configuredStorePath = getPluginSetting().get<string>('configStorePath', '').trim();
+	if (configuredStorePath && path.isAbsolute(configuredStorePath)) {
+		await relocateConfigFiles(context, configuredStorePath, false);
 	}
 	vscode.commands.executeCommand("setContext", "canEdit", false);
 
@@ -153,7 +219,7 @@ export async function activate(context: vscode.ExtensionContext) {
 		vscode.commands.registerCommand('sync_tools.editConfig', async () => {
 			const rootPath = await getCommandWorkspaceRoot()
 			if (!rootPath) return
-			let configPath = path.join(rootPath, 'sync_config.jsonc')
+			let configPath = getConfigFilePath(rootPath)
 			if (!fs.existsSync(configPath)) return
 
 			const uri = vscode.Uri.file(configPath);
@@ -169,6 +235,46 @@ export async function activate(context: vscode.ExtensionContext) {
 	context.subscriptions.push(
 		vscode.commands.registerCommand('sync_tools.openPluginSetting', () => {
 			vscode.commands.executeCommand('workbench.action.openSettings', '@ext:oorzc.ssh-tools');
+		})
+	);
+
+	context.subscriptions.push(
+		vscode.commands.registerCommand('sync_tools.selectConfigStorePath', async () => {
+			const current = getPluginSetting().get<string>('configStorePath', '');
+			const selected = await vscode.window.showOpenDialog({
+				canSelectFiles: false,
+				canSelectFolders: true,
+				canSelectMany: false,
+				openLabel: l10n.t('Select config store directory'),
+				defaultUri: current && path.isAbsolute(current) ? vscode.Uri.file(current) : undefined
+			});
+			if (!selected?.length) return;
+
+			const selectedPath = selected[0].fsPath;
+			const invalidForWorkspace = getWorkspaceRoots().some(rootPath =>
+				sameFilePath(getPreferredConfigFilePath(rootPath, selectedPath), path.join(rootPath, CONFIG_FILENAME))
+			);
+			if (!path.isAbsolute(selectedPath) || invalidForWorkspace) {
+				await vscode.window.showErrorMessage(l10n.t('The config store directory must be an absolute path outside every workspace.'));
+				return;
+			}
+
+			if (await relocateConfigFiles(context, selectedPath, true)) {
+				await reloadWorkspaceConfigs(context);
+			}
+		})
+	);
+
+	context.subscriptions.push(
+		vscode.commands.registerCommand('sync_tools.resetConfigStorePath', async () => {
+			const current = getPluginSetting().get<string>('configStorePath', '').trim();
+			if (!current) {
+				await vscode.window.showInformationMessage(l10n.t('Config store path already uses the project root.'));
+				return;
+			}
+			if (await relocateConfigFiles(context, '', true)) {
+				await reloadWorkspaceConfigs(context);
+			}
 		})
 	);
 
@@ -484,7 +590,8 @@ async function saveChangeFile(
 	let rootPath = getRootPath(file)
 	if (rootPath) {
 		// 如果是操作的根目录下面的配置文件
-		if (path.basename(file) === "sync_config.jsonc" || (opType.newname && path.basename(opType.newname) === "sync_config.jsonc")) {
+		const configPath = getConfigFilePath(rootPath)
+		if (sameFilePath(file, configPath) || (opType.newname && sameFilePath(opType.newname, configPath))) {
 			const previousConfig = await getUserConfig(2, 2, rootPath)
 			// 清空此 workspace 的 config cache。
 			await workspaceState.update(getWorkspaceStateKey("sync_config", rootPath), "")
@@ -540,6 +647,14 @@ async function saveChangeFile(
 let debounceSave = debounce(async (document) => {
 	let rootPath = getRootPath(document.uri.fsPath)
 	let context = getContext()
+	const configRoot = getWorkspaceRoots().find(root => sameFilePath(getConfigFilePath(root), document.uri.fsPath));
+	if (configRoot) {
+		await context.workspaceState.update(getWorkspaceStateKey('sync_config', configRoot), '');
+		await FileTransfer.closeAll();
+		await getUserConfig(2, 2, configRoot);
+		myEvent.fire('updateMenu');
+		return;
+	}
 	// 记录将要被重命名的文件或文件夹
 	saveFiles.add(document.uri.fsPath);
 	setTimeout(() => {

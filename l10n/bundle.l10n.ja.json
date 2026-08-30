@@ -94,5 +94,11 @@
   "Build command requires a trusted workspace. Trust the workspace and start synchronization again.": "ビルド コマンドには信頼されたワークスペースが必要です。ワークスペースを信頼してから同期を再実行してください。",
   "File is outside the workspace: {0}": "ファイルはワークスペース外にあります: {0}",
   "Upload failed": "アップロードに失敗しました",
-  "Failed to connect: {0}": "接続に失敗しました: {0}"
+  "Failed to connect: {0}": "接続に失敗しました: {0}",
+  "A configuration file already exists at {0}.": "{0} に設定ファイルが既に存在します。",
+  "Move {0} configuration file(s) to the selected location?": "{0} 個の設定ファイルを選択した場所へ移動しますか？",
+  "Select config store directory": "設定ファイル保存ディレクトリを選択",
+  "The config store directory must be an absolute path outside every workspace.": "設定保存ディレクトリには、すべてのワークスペース外にある絶対パスを指定してください。",
+  "Config store path already uses the project root.": "設定保存パスは既にプロジェクトルートを使用しています。",
+  "Could not move configuration file(s): {0}": "構成ファイルを移動できませんでした: {0}"
 }

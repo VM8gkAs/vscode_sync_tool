@@ -39,5 +39,8 @@
   "SyncTools.openFileSizeLimit": "打開檔案大小詢問，預設為5 Mb",
   "SyncTools.uploadTaskNumber": "當上傳數量大於多少時使用並發上傳，預設為10",
   "SyncTools.uploadConcurrentLimit": "上傳並發量配置：並發量最小為1，最大為100，預設為3",
+  "SyncTools.selectConfigStorePath": "選擇配置檔案儲存目錄",
+  "SyncTools.resetConfigStorePath": "重置配置檔案儲存路徑（使用專案根目錄）",
+  "SyncTools.configStorePath.description": "配置檔案的外部儲存目錄。請使用 **Sync Tools: 選擇配置檔案儲存目錄** (`sync_tools.selectConfigStorePath`)。`sync_config.jsonc` 將儲存在 `<路徑>/<專案>-<雜湊>/sync_config.jsonc`。留空則使用專案根目錄。",
   "SyncTools.proxyConfig.description": "[配置文件](https://www.npmjs.com/package/socks) \n\n 配置參考：\n\n ```js \n{\n   \"proxyHost\": \"127.0.0.1\", // ipv4、ipv6 或主機名 \n   \"proxyPort\": 7890, \n   \"proxyUsername\": \"\", // 用於 SOCKS4 userId 身份驗證，以及與密碼結合的 SOCKS5 user/pass 身份驗證。\n   \"proxyPassword\": \"\", // 與 userId 結合使用，用於 SOCKS5 代理的使用者/密碼身份驗證。\n   \"proxyType\": 5 // 代理版本（4 或 5）。對於 v4a 使用 4，對於 v5h 使用 5。\n}\n ```"
 }

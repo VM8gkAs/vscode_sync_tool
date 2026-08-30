@@ -14,6 +14,8 @@ import { Minimatch } from "minimatch"
 import { getContext } from "./config/globals"
 import dayjs = require("dayjs")
 import { execFile } from "child_process"
+import { createHash } from "crypto"
+import { CONFIG_FILENAME } from "./config/config"
 
 
 export type GitCommandResult = {
@@ -256,6 +258,65 @@ export const showInformationMessage = (msg: string, confirmText = l10n.t('Confir
  */
 export function getWorkspaceRoots(): string[] {
 	return (vscode.workspace.workspaceFolders || []).map(folder => folder.uri.fsPath);
+}
+
+function isPathInsideRoot(rootPath: string, candidatePath: string): boolean {
+	const relative = path.relative(path.resolve(rootPath), path.resolve(candidatePath));
+	return relative === ""
+		|| (relative !== ".." && !relative.startsWith(`..${path.sep}`) && !path.isAbsolute(relative));
+}
+
+export function getProjectConfigDirectoryName(rootPath: string): string {
+	const normalizedRoot = process.platform === "win32"
+		? path.resolve(rootPath).toLowerCase()
+		: path.resolve(rootPath);
+	const hash = createHash("sha256").update(normalizedRoot).digest("hex").slice(0, 8);
+	return `${path.basename(rootPath)}-${hash}`;
+}
+
+export function getPreferredConfigFilePath(rootPath: string, storePath?: string): string {
+	const projectConfigPath = path.join(rootPath, CONFIG_FILENAME);
+	const configuredStorePath = (storePath ?? getPluginSetting(rootPath).get<string>("configStorePath", "")).trim();
+	const workspaceRoots = [...new Set([rootPath, ...getWorkspaceRoots()])];
+	if (
+		!configuredStorePath
+		|| !path.isAbsolute(configuredStorePath)
+		|| workspaceRoots.some(workspaceRoot => isPathInsideRoot(workspaceRoot, configuredStorePath))
+	) {
+		return projectConfigPath;
+	}
+	return path.join(configuredStorePath, getProjectConfigDirectoryName(rootPath), CONFIG_FILENAME);
+}
+
+export function getConfigFilePath(rootPath: string): string {
+	const preferredPath = getPreferredConfigFilePath(rootPath);
+	const projectConfigPath = path.join(rootPath, CONFIG_FILENAME);
+	if (preferredPath !== projectConfigPath && !fs.existsSync(preferredPath) && fs.existsSync(projectConfigPath)) {
+		return projectConfigPath;
+	}
+	return preferredPath;
+}
+
+export function ensureConfigDirectory(configFilePath: string): void {
+	fs.ensureDirSync(path.dirname(configFilePath));
+}
+
+export async function copyConfigFilesTransactionally(
+	relocations: Array<{ sourcePath: string; targetPath: string }>,
+	commit: () => Promise<void>
+): Promise<void> {
+	const copiedTargets: string[] = [];
+	try {
+		for (const { sourcePath, targetPath } of relocations) {
+			ensureConfigDirectory(targetPath);
+			await fs.copy(sourcePath, targetPath, { overwrite: false, errorOnExist: true });
+			copiedTargets.push(targetPath);
+		}
+		await commit();
+	} catch (error) {
+		await Promise.allSettled(copiedTargets.map(targetPath => fs.remove(targetPath)));
+		throw error;
+	}
 }
 
 /**
@@ -761,7 +822,8 @@ async function selectConfig(jsonText: string) {
 	return res
 }
 
-function addGitignore(rootPath: string) {
+function addGitignore(rootPath: string, configFilePath: string) {
+	if (path.resolve(path.dirname(configFilePath)) !== path.resolve(rootPath)) return
 	let gitignorePath = path.join(rootPath, ".gitignore")
 	let data = ""
 	if (fs.existsSync(gitignorePath)) {
@@ -772,9 +834,8 @@ function addGitignore(rootPath: string) {
 			.map((line: string) => line.trim())
 			.filter((line: string) => line && !line.startsWith("#"))
 		// 如果gitignore中不存在sync_config.jsonc则加入
-		const configFilepath = path.join(rootPath, "sync_config.jsonc")
-		if (fs.existsSync(configFilepath) && !new_data.includes("sync_config.jsonc")) {
-			fs.appendFileSync(gitignorePath, "\nsync_config.jsonc", 'utf-8')
+		if (fs.existsSync(configFilePath) && !new_data.includes(CONFIG_FILENAME)) {
+			fs.appendFileSync(gitignorePath, `\n${CONFIG_FILENAME}`, 'utf-8')
 		}
 	}
 }
@@ -790,8 +851,9 @@ export async function addConfig(rootPath: string) {
 		let context = getContext();
 		// 获取 workspaceState 对象
 		const workspaceState = context.workspaceState
-		const filepath = path.join(rootPath, "sync_config.jsonc")
-		addGitignore(rootPath)
+		const filepath = getConfigFilePath(rootPath)
+		ensureConfigDirectory(filepath)
+		addGitignore(rootPath, filepath)
 		if (!fs.existsSync(filepath)) {
 			let updatedConfigData = await selectConfig(getExampleText())
 			if (!updatedConfigData) {
@@ -854,8 +916,9 @@ export async function getUserConfig(
 
 		const configData = configText ? parseConfigObject(configText) : {}
 
-		const filepath = path.join(rootPath, "sync_config.jsonc")
-		addGitignore(rootPath)
+		const filepath = getConfigFilePath(rootPath)
+		ensureConfigDirectory(filepath)
+		addGitignore(rootPath, filepath)
 		if (!fs.existsSync(filepath)) {
 			if (type < 2) {
 				let obj = await selectConfig(getExampleText())

@@ -33,6 +33,11 @@ export const vscodeMock: any = {
 	StatusBarAlignment: {
 		Left: 1
 	},
+	ConfigurationTarget: {
+		Global: 1,
+		Workspace: 2,
+		WorkspaceFolder: 3
+	},
 	workspace: {
 		isTrusted: true,
 		workspaceFolders: [] as { uri: { fsPath: string } }[],
@@ -46,7 +51,10 @@ export const vscodeMock: any = {
 		getConfiguration: () => ({
 			get: (key: string, defaultValue?: any) => Object.prototype.hasOwnProperty.call(configurationValues, key)
 				? configurationValues[key]
-				: defaultValue
+				: defaultValue,
+			update: async (key: string, value: any) => {
+				configurationValues[key] = value;
+			}
 		}),
 		openTextDocument: async (fileName: string) => ({ fileName })
 	},

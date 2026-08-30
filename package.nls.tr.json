@@ -39,5 +39,8 @@
   "SyncTools.openFileSizeLimit": "Dosya açma boyutu sorusu, varsayılan olarak 5 Mb",
   "SyncTools.uploadTaskNumber": "Yükleme sayısı ne kadar olduğunda eşzamanlı yükleme kullanılacak, varsayılan olarak 10",
   "SyncTools.uploadConcurrentLimit": "Yükleme eşzamanlılık sınırı yapılandırması: Eşzamanlılık en az 1, en fazla 100, varsayılan olarak 3",
+  "SyncTools.selectConfigStorePath": "Yapılandırma depolama dizini seç",
+  "SyncTools.resetConfigStorePath": "Yapılandırma depolama yolunu sıfırla (proje kökünü kullan)",
+  "SyncTools.configStorePath.description": "Yapılandırma dosyaları için harici dizin. **Sync Tools: Yapılandırma depolama dizini seç** (`sync_tools.selectConfigStorePath`) komutunu kullanın. `sync_config.jsonc`, `<yol>/<proje>-<hash>/sync_config.jsonc` konumunda saklanır. Proje kökünü kullanmak için boş bırakın.",
   "SyncTools.proxyConfig.description": "[Yapılandırma dokümanı](https://www.npmjs.com/package/socks) \n\n Yapılandırma örneği: \n\n ```js \n{\n   \"proxyHost\": \"127.0.0.1\", // ipv4, ipv6 veya ana bilgisayar adı \n   \"proxyPort\": 7890, \n   \"proxyUsername\": \"\", // SOCKS4 userId kimlik doğrulaması için ve SOCKS5 kullanıcı/şifre kimlik doğrulaması için şifre ile birlikte kullanılır. \n   \"proxyPassword\": \"\", // SOCKS5 proxy için kullanıcı/şifre kimlik doğrulaması için userId ile birlikte kullanılır. \n   \"proxyType\": 5 // Proxy versiyonu (4 veya 5). v4a için 4, v5h için 5 kullanın. \n}\n ```"
 }

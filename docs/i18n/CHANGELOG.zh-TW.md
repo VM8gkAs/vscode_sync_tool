@@ -1,5 +1,16 @@
 # 更新日誌
 
+## 下一版本
+
+### 新增
+- 新增 `SyncTools.configStorePath`，以及選擇／重置外部 `sync_config.jsonc` 目錄的命令；multi-root 使用穩定的 `<專案>-<雜湊>` 目錄隔離同名專案，且不覆寫既有目標檔案。
+- 新增外部路徑驗證、專案根目錄遷移 fallback、同名 workspace 隔離、外部設定讀取不修改 `.gitignore`，以及 I/O 失敗後搬移回復的聚焦測試。
+
+### 變更
+- 移除加密的擴充套件到期閘門，不再因硬編碼日期停止啟動。
+- upstream 外部配置概念已配合目前 multi-root 與 cache 模型重新實作；未帶入生成檔、repository agent rule 或 vendored SFTP 修改。
+- 配置搬移若在複製或更新全域設定時失敗，會回復已暫存的副本並顯示本地化錯誤，不會讓 I/O 錯誤中止擴充套件啟動。
+
 ## v0.6.3（2026-07-17）
 
 ### 新增

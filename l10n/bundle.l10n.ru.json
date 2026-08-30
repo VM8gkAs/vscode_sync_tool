@@ -94,5 +94,11 @@
   "Build command requires a trusted workspace. Trust the workspace and start synchronization again.": "Для команды сборки требуется доверенная рабочая область. Сделайте её доверенной и повторно запустите синхронизацию.",
   "File is outside the workspace: {0}": "Файл находится за пределами рабочей области: {0}",
   "Upload failed": "Ошибка загрузки",
-  "Failed to connect: {0}": "Не удалось подключиться: {0}"
+  "Failed to connect: {0}": "Не удалось подключиться: {0}",
+  "A configuration file already exists at {0}.": "Файл конфигурации уже существует в {0}.",
+  "Move {0} configuration file(s) to the selected location?": "Переместить файлы конфигурации ({0}) в выбранное расположение?",
+  "Select config store directory": "Выбрать каталог хранения конфигурации",
+  "The config store directory must be an absolute path outside every workspace.": "Каталог конфигурации должен быть абсолютным путём вне всех рабочих областей.",
+  "Config store path already uses the project root.": "Путь конфигурации уже использует корень проекта.",
+  "Could not move configuration file(s): {0}": "Не удалось переместить файлы конфигурации: {0}"
 }

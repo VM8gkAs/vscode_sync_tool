@@ -94,5 +94,11 @@
     "Build command requires a trusted workspace. Trust the workspace and start synchronization again.": "建置命令需要受信任的工作區。請信任此工作區後重新啟動同步。",
     "File is outside the workspace: {0}": "檔案位於工作區之外：{0}",
     "Upload failed": "上傳失敗",
-    "Failed to connect: {0}": "連線失敗：{0}"
+    "Failed to connect: {0}": "連線失敗：{0}",
+    "A configuration file already exists at {0}.": "{0} 已存在配置檔案。",
+    "Move {0} configuration file(s) to the selected location?": "是否將 {0} 個配置檔案移動到所選位置？",
+    "Select config store directory": "選擇配置檔案儲存目錄",
+    "The config store directory must be an absolute path outside every workspace.": "配置儲存目錄必須是所有工作區之外的絕對路徑。",
+    "Config store path already uses the project root.": "配置儲存路徑已經使用專案根目錄。",
+    "Could not move configuration file(s): {0}": "無法移動配置檔案：{0}"
 }
