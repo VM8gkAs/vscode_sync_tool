@@ -37,6 +37,7 @@
   "SyncTools.excludePath.description": "默认不上传文件或文件夹",
   "SyncTools.logShow": "是否需要实时展示日志，默认为true",
   "SyncTools.logNumberLimit": "日志数量限制，默认为500条，超过后自动清空日志",
+  "SyncTools.outputClearAfterSeconds": "所有同步队列空闲后清除输出。设为 false 保留日志，或设为正秒数。",
   "SyncTools.openFileSizeLimit": "打开文件大小询问，默认为5 Mb",
   "SyncTools.uploadTaskNumber": "当上传数量大于多少时使用并发上传，默认为10",
   "SyncTools.uploadConcurrentLimit": "上传并发量配置：并发量最小为1，最大为100，默认为3",

@@ -161,9 +161,6 @@ export function installVscodeMock() {
 				create: () => ({})
 			};
 		}
-		if (request.endsWith('lib/ssh2-sftp-client/index') || request === './lib/ssh2-sftp-client/index') {
-			return class MockSftpClient {};
-		}
 		return originalLoad ? originalLoad(request, parent, isMain) : undefined;
 	};
 }

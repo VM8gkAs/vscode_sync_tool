@@ -1,6 +1,6 @@
 # vscode_sync_tool 程式改進路線圖
 
-> 最後更新：2026-08-30
+> 最後更新：2026-08-31
 > 本文件是專案唯一持續更新的改進目標與優先順序總覽。歷史效能分析保留於 [2026-05-25 Complexity Report](archive/complexity-report-2026-05-25.md)。
 
 ## 文件重點
@@ -16,9 +16,12 @@
 - 2026-08-30 完成 P1-4／P1-5：核心訊息與 Build 術語已統一，untrusted workspace 不會執行 `config.build`，async Promise executor 已移除並補齊聚焦測試。
 - 2026-08-30 完成 upstream `390af0d` 選擇性整合：移除到期閘門，並以 multi-root、安全搬移、失敗回復與 cache reload 重新實作外部配置儲存；未帶入 agent rule、生成檔與 vendored SFTP 改寫。
 - 2026-08-30 完成 P3-1～P3-5：拖曳／遠端移動安全邊界、同步終態顯示、SSH ZIP 安全解壓縮與右鍵命令，以及 fresh remote 單檔差異檢視均已補齊測試。
+- 2026-08-31 完成 SFTP 12 真實私鑰上傳與改名回歸：外部檔案系統改名會刪除舊遠端路徑再上傳新路徑，IDE 內改名仍使用遠端 `rename`。
+- 2026-09-01 將 upstream 選擇性整合、VS Code 1.101／SFTP 12 遷移、動態 JSONC 說明與實機回歸正式定版為 0.7.0。
 - `upstream-main` 已精確指向 upstream `390af0d` 並推送至 `origin/upstream-main`；經審查的整合則由 `main` 保存，不直接修改純 upstream 鏡像。
-- 下一步為 P3-6 雙向同步；開始前需先定義衝突策略、覆寫確認與批次結果 UI。
-- 目前不追最新版工具鏈；build baseline 維持 Node 22、pnpm 10、VS Code `^1.82.0`。
+- upstream 剩餘差異已完成分類：安全亂數、遠端虛擬文件邊界、可選 Output 自動清除、移除 production obfuscation、CI 安裝腳本檢查與 SFTP client 12.1.1 列入近期計畫；危險安裝腳本、agent rule、生成檔、發布中繼資料與已被現行架構取代的實作不引入。
+- P3-6 雙向同步仍待處理；開始前需先完成近期安全／建置項目，並定義衝突策略、覆寫確認與批次結果 UI。
+- 本輪核准將最低執行環境調整為 VS Code `^1.101.0`（Extension Host Node 22）；build baseline 維持 Node 22、pnpm 10，不再支援 VS Code 1.82。
 
 ## 開發項目核對表
 
@@ -26,8 +29,8 @@
 
 | 狀態 | 項目 | 核對結果 |
 | --- | --- | --- |
-| ✅ | P0-1 任務終態、cache 與診斷記錄 | queue `drain`、失敗、取消、停止、skip 與空部署已統一進入 config-scoped finalize；stale upload 在遠端 mutation 前結束；watch 資料夾展開保留子檔遠端路徑；成功 finalize 不再清除 Output，檔案 log 具 workspace scope 與路徑邊界。 |
-| ✅ | P0-2 上下載與 watcher ignore 語意 | 上下載共用 compiled matcher；`tools/**` 同時涵蓋目錄根與 descendants；FTP/SFTP 在 list 子目錄前 pruning；watcher rename/move 會同時檢查 old/new path。 |
+| ✅ | P0-1 任務終態、cache 與診斷記錄 | queue `drain`、失敗、取消、停止、skip 與空部署已統一進入 config-scoped finalize；只有 completed 清除 watch cache，其他終態保留可重試項目；成功 finalize 不清除 Output，檔案 log 具 workspace scope 與路徑邊界。 |
+| ✅ | P0-2 上下載與 watcher ignore 語意 | 上下載共用 compiled matcher；`tools/**` 同時涵蓋目錄根與 descendants；FTP/SFTP 在 list 子目錄前 pruning；IDE rename/move 檢查 old/new path，外部改名則刪除舊遠端路徑並上傳新路徑。 |
 | ✅ | P0-3 Multi-root workspace | workspace root 已納入 config、queue、connection pool、watch cache、debounce、Tree node 與暫存檔 scope。 |
 | ✅ | P0-4 CI 與發布閘門 | GitHub Actions 已執行安裝、翻譯檢查、測試、strict typecheck、lint、production build、audit 與 VSIX 實包；pnpm lint 參數已修正為有效 gate。 |
 | ✅ | P1-1 Queue／事件／設定模型 | `Task.operationType`、watch `opType` 與 `myEvent` payload 已收斂為 discriminated union；config raw/default normalization 與 runtime `workspaceRoot` 注入已分離。 |
@@ -47,6 +50,72 @@
 | ⬜ | P3-6 雙向同步 | 尚未建立雙向同步流程、衝突策略與批次差異檢視。 |
 
 狀態圖示：⬜ 未完成；🟡 部分完成；✅ 已完成。
+
+## Upstream 差異處理與後續計畫（2026-08-30）
+
+結論：所有差異均已歸類為「引入／重新實作」、「已由現行設計取代」或「明確忽略」，不再等待設計討論，也不直接 merge `upstream-main`。SFTP client 已核准升級至官方 `ssh2-sftp-client@12.1.1`，最低 VS Code 同步提高至 `^1.101.0`。
+
+### 差異決策矩陣
+
+| 決策 | Upstream 變化 | 現行處理 |
+| --- | --- | --- |
+| 引入 | `generateRandomPassword()` 改用密碼學安全亂數 | 以 `crypto.randomBytes()` 取代 `Math.random()`，保留既有長度與字元格式並補測試。 |
+| 引入並保留現行 scope | 以 `URI_SCHEME` 判斷遠端虛擬文件 | 明確區分 `async-tools:` 文件與 workspace 外一般文件；保留目前 `workspaceRoot###configName` scope。 |
+| 引入為可選行為 | upstream 完成後約 2.5 秒清除 Output task | 新增 `SyncTools.outputClearAfterSeconds: false | number`；預設 `false`，設定 `2.5` 才等同 upstream，正數可自訂秒數。 |
+| 引入並量測 | 移除 production obfuscation | 先做有／無混淆 A/B build，比較 bundle、VSIX、建置與 Extension Host；通過後移除 obfuscator 與依賴。 |
+| 引入為供應鏈 gate | `585c41b`／`79ffa2d` 暴露 lifecycle script 風險 | CI 檢查 root `preinstall`／`install`／`postinstall` 與隱藏 `eval`；未核准時直接失敗。 |
+| 已重新實作／現行較完整 | 外部 config、多工作區、POSIX path、event 型別、queue／cache scope、Git command、ZIP 解壓與 Output retention | 維持現行安全搬移、失敗回復、workspace-scoped key、參數化 Git、ZIP 預檢及終態保留，不退回 upstream 實作。 |
+| 忽略 | 隱藏 `preinstall.js`、`.cursor/rules/pchat.mdc`、生成的 `types`／map／copy 檔、`ssh-tool` 重新命名與 upstream 版本中繼資料 | 不引入。生成物仍由 build 產生，不納入手動維護。 |
+| 忽略／已取代 | 泛用 `deepClone`、缺少 `remotePath` 時默認 `/`、固定 2.5 秒清除、shell 字串 Git、未引用參數的 `unzip -o` | 使用 task-specific clone、明確 config 驗證、預設保留 Output、參數化 Git 與安全 ZIP 流程。 |
+| 核准引入 | SFTP client 12.1.1 | 使用官方固定版本依賴與最小本地 adapter，將最低 VS Code 提高至 `^1.101.0`；不得修改 `node_modules` 或整包沿用 upstream 的 vendored patch。 |
+
+### Output 自動清除語意
+
+```jsonc
+// 預設：保留 Output，直到手動清除或超過 logNumberLimit
+"SyncTools.outputClearAfterSeconds": false
+
+// 等同 upstream 的 2500 ms 行為
+"SyncTools.outputClearAfterSeconds": 2.5
+```
+
+- 設定只接受 `false` 或大於 0 的有限數字；`true`、0、負數與無效值均視為 `false`。
+- 只有所有 queue idle 後才啟動計時器；新任務或新 log 會取消／重設計時器，避免清除仍在進行的同步資訊。
+- 計時完成時清除記憶體 task list 與可見 Output Channel；不刪除 `sync_logs/sync-tools.log`，也不清除 Tree View／Status Bar 的同步終態。
+- Output Channel 為整個視窗共用，因此設定採 window scope，不允許不同 workspace folder 互相清除同一份輸出。
+
+### SFTP client 12.1.1 遷移邊界
+
+- `ssh2-sftp-client@12.1.1` 套件宣告 Node `>=18.20.4`，維護者支援政策則是 Node 20 以上；VS Code 1.101 已將 Extension Host 更新至 Node 22，因此核准以 `engines.vscode: ^1.101.0` 作為新基線。[v12.1.1 package metadata](https://github.com/theophilusx/ssh2-sftp-client/blob/v12.1.1/package.json)／[VS Code 1.101 runtime](https://code.visualstudio.com/updates/v1_101#_web-environment-detection)
+- 以官方固定依賴 `ssh2-sftp-client: 12.1.1` 取代 `src/lib/ssh2-sftp-client`；切換 import、mock 與型別後，確認沒有 runtime 引用才刪除舊 vendored client，不手動修改套件內容或 `node_modules`。
+- 官方 v12 移除初始連線 retry；在 `FileTransfer.getClient()` 既有連線邊界使用已安裝的 `promise-retry` 保留 `retries`、`retry_factor`、`retry_minTimeout` 行為。每次重試必須新建 adapter／client，proxy 模式也要新建 socket，並確保每次失敗 client、socket 與 limiter lease 只清理一次。
+- 官方 v12 沒有公開 `exec()`；以單一最小 adapter 封裝 library-owned `ssh2` client 的 command execution，保留 exit code、signal、stdout／stderr、stream error 與 listener cleanup，不新增第二條未受 connection limiter 管理的 SSH 連線，也不讓內部欄位散布到呼叫端。
+- 保留現行 POSIX 遠端路徑、multi-root pool scope、stale task、空檔案、skip、ZIP 預檢、同步檔案時間與錯誤終態語意；不得為配合 v12 退回 upstream 的全域 pool 或直接覆寫流程。
+- 同步更新 `@types/vscode` 至 `1.101.0`、`@types/node` 至 Node 22、`test:vscode:min` 至 `1.101.0`，並檢查 `@vscode/test-electron` 與 CI Node 22 是否仍相容；不順帶採用 VS Code 1.101 以後的新 API。
+- 自動化覆蓋 password／key／proxy config wiring、connect retry、`fastPut`／`fastGet`、空檔案、多重 stream error、rename、`exec`／ZIP、connection pool、close／ECONNRESET 與 min／Stable Extension Host；若沒有可用的真實 SFTP server，需留下明確的人工 smoke test 清單，不得把 mock 測試描述成實機驗證。
+
+### 執行順序
+
+| 順序 | 項目 | 完成條件 |
+| --- | --- | --- |
+| 1 | 密碼學安全 secret key 亂數 | 長度／格式聚焦測試通過，CodeLens 加解密行為不變。 |
+| 2 | 遠端虛擬文件 URI 邊界 | `async-tools:` 可儲存；workspace 外一般文件不會進入遠端 save；multi-root scope 不退化。 |
+| 3 | `SyncTools.outputClearAfterSeconds` | `false` 保留、`2.5` 延遲清除、新任務取消 timer、其他 queue 執行時不清除、檔案 log 不受影響。 |
+| 4 | 移除 production obfuscation A/B 驗證 | 完整 gate 通過，bundle／VSIX／啟動量測有記錄，再決定刪除依賴。 |
+| 5 | CI lifecycle／隱藏執行檢查 | 未核准的 root lifecycle script 或隱藏 `eval` 可讓 CI 明確失敗。 |
+| 6 | VS Code 1.101／SFTP client 12.1.1 遷移 | 官方固定依賴與最小 adapter 取代 vendored client；客製 retry／`exec`、pool、路徑與錯誤語意有聚焦測試，VS Code 1.101／Stable Host 均通過。 |
+| 7 | 文件與發布閘門 | 更新 `CHANGELOG.md` Next Version、README 最低版本與設定說明，完成 tests、strict typecheck、i18n、lint、production build、audit、兩個 VS Code Host 與 VSIX 實包。 |
+
+### 本輪執行紀錄（2026-08-31）
+
+- 已完成第 1～7 項（不含 P3-6）：secret key 改用 `crypto.randomBytes()`；僅 `async-tools:` 虛擬文件會進入遠端儲存；新增 window-scoped `SyncTools.outputClearAfterSeconds`（預設 `false`）。
+- Production obfuscation A/B：啟用時 webpack `58,176 ms`／bundle `7,328,573 bytes`；移除後 `9,403 ms`／`1,156,461 bytes`（時間約 -83.8%、bundle 約 -84.2%），因此已移除 `javascript-obfuscator`／`webpack-obfuscator`。
+- 已加入 CI lifecycle／hidden execution gate；升級至 VS Code 1.101、Node 22 型別與官方固定 `ssh2-sftp-client@12.1.1`。官方 v12 未公開的 SSH command execution 集中在單一 adapter，重試建立新 client／proxy socket 並沿用既有 pool lease。
+- `sync_config.jsonc` 現以 extension manifest 的 JSON schema 保留 validation／型別／enum，並由 extension completion／hover 依 VS Code 目前語系提供說明；de/es/fr/it/ja/ko/pl/pt-br/ru/tr/zh-cn/zh-tw 均已本地化，英文與未知語系 fallback 英文。新建檔案不再寫入冗長參考註解；schema 英文說明改用不參與 hover 的 `$comment`，避免與動態本地化內容重複。
+- 真實 SFTP 私鑰 smoke 已完成本輪範圍：`tools/**` 小檔不進 queue，一般小檔正確入列；初次連線發現官方 `ssh2-sftp-client` 12.1.1 不接受舊 `privateKeyPath` 欄位。現已改為讀取私鑰檔內容至 `privateKey`，並讓失敗／取消／停止保留 watch cache、部署連線錯誤寫入檔案 log。
+- 真實回歸已確認 private-key `fastPut`、`tools/**` 排除、IDE 目錄 rename、外部目錄改名降級刪除／上傳、檔案 log 與 JSONC 單一本地化 hover；獨立 SFTP exists 查驗確認外部改名未留下舊遠端路徑。
+- 自動驗證：114 tests、strict typecheck、i18n、lint error gate、lifecycle gate、production build、production audit（0 vulnerabilities）、VS Code 1.101／Stable 1.135.0 Extension Host 通過；正式 `ssh-tools-0.7.0.vsix` 為 59 files／538,588 bytes，SHA-256 `D079C88C529D4AFBF94CABA7519D051252D35AD3D384598EEA96CADA1461B13B`。
+- 尚待真實 smoke：password／SOCKS proxy、fastGet（含空檔）、ZIP exec、mtime、ECONNRESET 與 pool close。
 
 ## P2 前審查結果（2026-07-10）
 
@@ -88,12 +157,14 @@ P2 處理結果（原審查項目）：
 
 ## 目前基線與驗證
 
-- 技術：TypeScript、VS Code Extension API、Webpack；build／CI 使用 Node 22 與 pnpm 10，擴充套件執行期最低為 VS Code 1.82／Node 18。
-- 正式版本：`0.6.3`；後續 VSIX 重建應產生 `ssh-tools-0.6.3.vsix`，不得再以 `0.6.2` 覆蓋新改動。
-- 測試：Mocha，現有 80 個聚焦測試。
+- 技術：TypeScript、VS Code Extension API、Webpack；build／CI 使用 Node 22 與 pnpm 10，擴充套件執行期最低為 VS Code 1.101／Node 22。
+- 正式版本：`0.7.0`；後續 VSIX 重建應產生 `ssh-tools-0.7.0.vsix`。
+- 測試：Mocha，現有 114 個聚焦測試。
 - 發布入口：`dist/extension.js`，VSIX 使用 `--no-dependencies` 打包。
 - 正式依賴安全稽核：0 vulnerabilities。
 - 最近驗證：
+  - 2026-09-01 v0.7.0 正式發行核對：114 passing、strict typecheck、i18n、lint error gate、lifecycle gate、production build、production audit（0 vulnerabilities）、VS Code 1.101／Stable 1.135.0 Extension Host 與 VSIX 實包（59 files、538,588 bytes）通過；SHA-256 `D079C88C529D4AFBF94CABA7519D051252D35AD3D384598EEA96CADA1461B13B`。
+  - 2026-08-31 SFTP 12 真實私鑰與外部改名回歸：114 passing、strict typecheck、i18n、lint error gate、lifecycle gate、production build、production audit（0 vulnerabilities）、VS Code 1.101／Stable 1.135.0 Extension Host 與 VSIX 實包（59 files、538,448 bytes）通過；SHA-256 `962898168CCBF2B86850E0EF7AC2595C938D975D8166B3048471EEB142A77E72`。
   - 2026-08-30 P3-1～P3-5 完成：102 passing、strict typecheck、source-aware i18n、lint error gate、production build、production audit（0 vulnerabilities）、VS Code 1.82／Stable 1.135.0 Extension Host 與暫存 VSIX（58 files、2.33 MiB；bundle 6.84 MiB）均通過；SHA-256 `0C8B6228AA917E45433F645F3DCDF1F0A291D43C9D60A54805294F78AF70C3DD`。
   - 2026-08-30 upstream 選擇性整合：80 passing、strict typecheck、source-aware i18n、lint error gate、production build、production audit（0 vulnerabilities）、VS Code 1.82／Stable 1.135.0 Extension Host 與暫存 VSIX（58 files、2.35 MiB；bundle 6.93 MiB）均通過；SHA-256 `C5018C8DEA29ADDAF16D4CFD69E1903F8E6FB5F480C89CFD38F2806026D44AF3`。
   - 2026-08-30 P1 完成與 v0.6.3 重建：75 passing、strict typecheck、source-aware i18n、lint error gate、production build、production audit（0 vulnerabilities）、VS Code 1.82／Stable 1.135.0 Extension Host 與 VSIX 實包（58 files、2.37 MiB）均通過；SHA-256 `F3F6438100AD1DF9A5B610171F9089567DF43B6BC450F476C729CE54EBED3DB9`。
@@ -128,9 +199,9 @@ P2 處理結果（原審查項目）：
 | --- | --- | --- | --- |
 | Node.js（build／CI） | `22.x` | `22.x` | `26.3.1` Current |
 | pnpm | `10.34.4` | `10.34.4` | `11.8.0` |
-| `engines.vscode` | `^1.82.0` | `^1.82.0` | `^1.125.0` |
-| `@types/vscode` | `1.82.0` | `1.82.0` | `1.125.0` |
-| `@types/node` | `18.19.130` | `18.19.130` | `26.0.0` |
+| `engines.vscode` | `^1.101.0` | `^1.101.0` | `^1.125.0` |
+| `@types/vscode` | `1.101.0` | `1.101.0` | `1.125.0` |
+| `@types/node` | `22.15.3` | `22.x` | `26.0.0` |
 | TypeScript | `5.9.3` | `5.9.3` | `6.0.3` |
 | ESLint | `9.39.4` | `9.39.4` | `10.5.0` |
 | typescript-eslint | `8.61.1` | `8.61.1` | `8.61.1` |
@@ -139,7 +210,7 @@ P2 處理結果（原審查項目）：
 | ts-loader | `9.6.1` | `9.6.1` | `9.6.1` |
 | Mocha | `11.7.6` | `11.7.6` | `11.7.6` |
 | VSCE | `3.9.2` | `3.9.2` | `3.9.2` |
-| javascript-obfuscator | `5.4.3` | `5.4.3` | `5.4.3` |
+| production obfuscation | 已移除 | 已移除 | 不採用 |
 | `@types/archiver` | `5.3.4` | `7.0.0` | `8.0.0` |
 | archiver | `7.0.1` | `7.0.1` | `8.0.0` |
 | minimatch | `9.0.9` | `9.0.9` | `10.2.5` |
@@ -149,10 +220,10 @@ P2 處理結果（原審查項目）：
 ### 判定摘要
 
 - Build／CI 固定使用 Node 22 與 pnpm 10.34.4；本機能正常建置時不需為此升級。
-- 最低 VS Code 維持 `^1.82.0`，並以 `@types/vscode 1.82.0`、Node 18 型別及 Extension Host 測試守住相容性。
-- TypeScript 5.9、ESLint 9、typescript-eslint 8、Mocha 11、webpack-cli 7 與 javascript-obfuscator 5 已完成升級。
+- package 已遷移至 VS Code `^1.101.0`，並同步使用 `@types/vscode 1.101.0`、Node 22 型別及 VS Code 1.101 Extension Host 測試。
+- TypeScript 5.9、ESLint 9、typescript-eslint 8、Mocha 11 與 webpack-cli 7 已完成升級；production obfuscation 已依本輪 A/B 結果移除。
 - TypeScript 6、ESLint 10、pnpm 11 與 ESM-only major 套件需另案遷移，不直接追最新版。
-- 下一個低風險項目是將 `@types/archiver` 對齊 archiver 7；只有出現新 API 或 runtime 需求時才提高最低 VS Code。
+- `@types/archiver` 對齊 archiver 7 仍屬低風險候選，但不得插入本輪 upstream／SFTP 遷移造成不相關 diff。
 
 ## 優先級定義
 
@@ -173,7 +244,7 @@ P2 處理結果（原審查項目）：
 
 - queue 以 workspace root＋config name 為 scope，`drain` 會使用最新 scoped config 統一呼叫 config-level finalize。
 - 任務終態收斂為 `completed`、`failed`、`cancelled`、`stopped`，retry exhausted 與 connection error 會明確標記為 failed。
-- finalize 集中清除 watch cache、已確認／進行中的遠端資料夾檢查，並更新 Status Bar 與 Tree View。
+- finalize 只在 completed 清除 watch cache；failed／cancelled／stopped 保留可重試項目。所有終態都清除已確認／進行中的遠端資料夾檢查，並更新 Status Bar 與 Tree View。
 - watch cache cleanup 失敗時仍會送出終態 UI／event，避免卡在 working 狀態。
 - 成功 finalize 不再自動清除 Output；僅明確的 Clear All Log 命令會清空面板，超過 `SyncTools.logNumberLimit` 時只移除最舊記錄。
 - queue stop 後會重建乾淨 queue；finalize 具 idempotent guard，不會重複收尾。
@@ -472,7 +543,7 @@ P3-1～P3-5 已完成：
 
 ## 暫不處理
 
-- 不直接修改 vendored `src/lib/ssh2-sftp-client`，除非決定正式維護 fork。
+- 不修改 `node_modules/ssh2-sftp-client` 或複製官方原始碼形成新的 vendored fork；12.1.1 的客製 retry／`exec` 只能集中在最小本地 adapter 與既有 `FileTransfer` 邊界。
 - 不為消除全部 lint warning 進行全專案格式化；應配合實際修改逐步收斂。
 - 10k Tree baseline 尚未顯示 paging 的必要性；未出現實際門檻前不導入複雜 cache framework。
 - 不在任務終態與衝突策略穩定前開始雙向同步 UI。

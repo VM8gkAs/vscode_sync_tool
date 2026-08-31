@@ -1,4 +1,5 @@
 import assert from 'assert';
+import { EventEmitter } from 'events';
 import { installVscodeMock, resetVscodeMock } from './setup/vscodeMock';
 
 installVscodeMock();
@@ -34,6 +35,24 @@ describe('SSH remote ZIP extraction', () => {
 		});
 	}
 
+	function createCommandClient(run: (command: string) => Promise<{ stdout: string; stderr: string; code: number | null; signal: string | null }>) {
+		const rawClient = new EventEmitter() as EventEmitter & { exec: Function };
+		rawClient.exec = (command: string, _options: unknown, callback: Function) => {
+			const channel = new EventEmitter() as EventEmitter & { stderr: EventEmitter; end: () => void };
+			channel.stderr = new EventEmitter();
+			channel.end = () => {
+				void run(command).then(result => {
+					if (result.stdout) channel.emit('data', Buffer.from(result.stdout));
+					if (result.stderr) channel.stderr.emit('data', Buffer.from(result.stderr));
+					channel.emit('exit', result.code, result.signal);
+					channel.emit('close');
+				});
+			};
+			callback(undefined, channel);
+		};
+		return { client: rawClient } as any;
+	}
+
 	it('quotes archive and destination paths as single POSIX shell arguments', () => {
 		assert.strictEqual(
 			buildRemoteUnzipCommand("/srv/a b/it's;$(touch nope).zip", '/srv/out dir'),
@@ -58,12 +77,10 @@ describe('SSH remote ZIP extraction', () => {
 
 	it('checks unzip availability before extraction', async () => {
 		const commands: string[] = [];
-		const client = {
-			exec: async (command: string) => {
+		const client = createCommandClient(async (command: string) => {
 				commands.push(command);
 				return { stdout: '', stderr: '', code: 127, signal: null };
-			}
-		} as any;
+			});
 
 		await assert.rejects(
 			() => createTransfer().unzipRemoteFile(client, '/srv/app/release.zip', '/srv/app'),
@@ -74,12 +91,10 @@ describe('SSH remote ZIP extraction', () => {
 
 	it('requires an SSH ZIP archive', async () => {
 		let calls = 0;
-		const client = {
-			exec: async () => {
+		const client = createCommandClient(async () => {
 				calls++;
 				return { stdout: '', stderr: '', code: 0, signal: null };
-			}
-		} as any;
+			});
 
 		await assert.rejects(
 			() => createTransfer().unzipRemoteFile(client, '/srv/app/release.tar', '/srv/app'),
@@ -93,7 +108,7 @@ describe('SSH remote ZIP extraction', () => {
 			{ stdout: '/usr/bin/unzip', stderr: '', code: 0, signal: null },
 			{ stdout: '', stderr: 'invalid archive', code: 9, signal: null }
 		];
-		const client = { exec: async () => responses.shift() } as any;
+		const client = createCommandClient(async () => responses.shift()!);
 
 		await assert.rejects(
 			() => createTransfer().unzipRemoteFile(client, '/srv/app/release.zip', '/srv/app'),
@@ -107,12 +122,10 @@ describe('SSH remote ZIP extraction', () => {
 			{ stdout: '/usr/bin/unzip', stderr: '', code: 0, signal: null },
 			{ stdout: 'safe/file.txt\n../escape.txt', stderr: '', code: 0, signal: null }
 		];
-		const client = {
-			exec: async (command: string) => {
+		const client = createCommandClient(async (command: string) => {
 				commands.push(command);
-				return responses.shift();
-			}
-		} as any;
+				return responses.shift()!;
+			});
 
 		await assert.rejects(
 			() => createTransfer().unzipRemoteFile(client, '/srv/app/release.zip', '/srv/app'),
@@ -123,8 +136,7 @@ describe('SSH remote ZIP extraction', () => {
 
 	it('executes extraction only after a successful capability check', async () => {
 		const commands: string[] = [];
-		const client = {
-			exec: async (command: string) => {
+		const client = createCommandClient(async (command: string) => {
 				commands.push(command);
 				return {
 					stdout: command.startsWith('unzip -Z1') ? 'file.txt' : '',
@@ -132,8 +144,7 @@ describe('SSH remote ZIP extraction', () => {
 					code: 0,
 					signal: null
 				};
-			}
-		} as any;
+			});
 
 		await createTransfer().unzipRemoteFile(client, '/srv/app/release.zip', '/srv/app');
 

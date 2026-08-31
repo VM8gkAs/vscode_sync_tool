@@ -37,6 +37,7 @@
   "SyncTools.excludePath.description": "Varsayılan olarak yüklenmeyen dosya veya klasörler",
   "SyncTools.logShow": "Günlüklerin gerçek zamanlı olarak gösterilip gösterilmeyeceği, varsayılan olarak true",
   "SyncTools.logNumberLimit": "Günlük sayısı sınırı, varsayılan olarak 500, sınırı aştığında otomatik olarak günlükler temizlenir",
+  "SyncTools.outputClearAfterSeconds": "Tüm eşitleme kuyrukları boşta olduğunda çıktıyı temizler. Günlükleri tutmak için false veya pozitif bir saniye sayısı kullanın.",
   "SyncTools.openFileSizeLimit": "Dosya açma boyutu sorusu, varsayılan olarak 5 Mb",
   "SyncTools.uploadTaskNumber": "Yükleme sayısı ne kadar olduğunda eşzamanlı yükleme kullanılacak, varsayılan olarak 10",
   "SyncTools.uploadConcurrentLimit": "Yükleme eşzamanlılık sınırı yapılandırması: Eşzamanlılık en az 1, en fazla 100, varsayılan olarak 3",

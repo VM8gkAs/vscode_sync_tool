@@ -69,6 +69,9 @@ export interface DeployConfigItem {
     secretKeyPath?: string; // 加密密钥文件路径
     proxy?: boolean; // 是否使用代理
     sock?: Socket;
+    retries?: number; // SFTP initial connection retries
+    retry_factor?: number;
+    retry_minTimeout?: number;
     watch?: boolean; // 监听上传目录文件变动，如果是前端项目不建议启用，默认true
     upload_on_save?: boolean; // 保存后实时提交，建议单人开发使用，upload_on_save设置为true时，watch、submit_git_before_upload、compress、deleteRemote无效，默认false
     submit_git_before_upload?: boolean; // 团队开发使用，上传代码前提交本地git，防止覆盖远程代码，默认true

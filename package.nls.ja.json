@@ -37,6 +37,7 @@
   "SyncTools.excludePath.description": "デフォルトでアップロードされないファイルまたはフォルダー",
   "SyncTools.logShow": "ログをリアルタイムで表示するかどうか、デフォルトはtrue",
   "SyncTools.logNumberLimit": "ログの表示件数制限、デフォルトは500件、超えると自動的にログがクリアされます",
+  "SyncTools.outputClearAfterSeconds": "すべての同期キューがアイドルになった後に出力をクリアします。ログを保持するには false、または正の秒数を設定します。",
   "SyncTools.openFileSizeLimit": "ファイルを開く際のサイズの確認、デフォルトは5 Mb",
   "SyncTools.uploadTaskNumber": "アップロード数がいくつ以上の場合に並列アップロードを使用するか、デフォルトは10",
   "SyncTools.uploadConcurrentLimit": "アップロードの並列制限設定：並列数の最小値は1、最大値は100、デフォルトは3",

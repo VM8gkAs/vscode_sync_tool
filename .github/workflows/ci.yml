@@ -34,6 +34,9 @@ jobs:
       - name: Install dependencies
         run: pnpm install --frozen-lockfile
 
+      - name: Check lifecycle and hidden execution policy
+        run: pnpm run check:lifecycle
+
       - name: Check translation keys
         run: pnpm run check:i18n
 
@@ -70,7 +73,7 @@ jobs:
       fail-fast: false
       matrix:
         vscode:
-          - 1.82.0
+          - 1.101.0
           - stable
     steps:
       - name: Check out repository

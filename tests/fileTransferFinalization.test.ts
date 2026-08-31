@@ -130,6 +130,18 @@ describe('FileTransfer queue finalization', () => {
 		assert.strictEqual(FileTransfer.queueTerminalStates[scopeKey(config)], 'failed');
 	});
 
+	it('retains watch cache after failed finalization', async () => {
+		const config = createConfig();
+		const transfer = new FileTransfer(config);
+		const cacheKey = `${config.name}###${workspaceRoot}`;
+		const pending = { [path.join(workspaceRoot, 'pending.txt')]: { op: 'edit', type: 'file' } };
+		await vscodeMockExtensionContext.workspaceState.update(cacheKey, pending);
+
+		await transfer.finalizeQueue(config, 'failed');
+
+		assert.deepStrictEqual(vscodeMockExtensionContext.workspaceState.get(cacheKey), pending);
+	});
+
 	it('publishes the terminal state to the status bar and UI event', async () => {
 		const config = createConfig();
 		const transfer = new FileTransfer(config);
@@ -399,6 +411,29 @@ describe('FileTransfer queue finalization', () => {
 
 		assert.strictEqual(FileTransfer.queueTerminalStates[scopeKey(config)], 'cancelled');
 		assert.strictEqual(FileTransfer.finalizedQueues.has(scopeKey(config)), true);
+	});
+
+	it('persists deployment connection errors to the workspace log', async () => {
+		setConfigurationValue('logToFile', true);
+		const config = createConfig();
+		config.watch = false;
+		const Deploy = require('../src/deploy').Deploy;
+		const deploy = new Deploy({ config });
+		deploy.taskList = [{
+			type: 'connect',
+			tip: 'Connect to server',
+			increment: 0,
+			async: true,
+			task: async () => { throw new ClientConnectionError('authentication failed'); }
+		}];
+
+		await assert.rejects(deploy.start(), /authentication failed/);
+		const logFile = path.join(workspaceRoot, 'sync_logs', output.SYNC_LOG_FILE_NAME);
+		for (let attempt = 0; attempt < 20 && !fs.existsSync(logFile); attempt++) {
+			await new Promise(resolve => setTimeout(resolve, 5));
+		}
+
+		assert.match(fs.readFileSync(logFile, 'utf8'), /\[connect\]\[error\].*authentication failed/);
 	});
 
 	it('finalizes explicit stop and cancellation states', async () => {

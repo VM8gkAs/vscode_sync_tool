@@ -37,6 +37,7 @@
   "SyncTools.excludePath.description": "Files or folders that are not uploaded by default",
   "SyncTools.logShow": "Whether to display logs in real-time, default is true",
   "SyncTools.logNumberLimit": "Log number limit, default is 500. Logs will be automatically cleared when the limit is exceeded.",
+  "SyncTools.outputClearAfterSeconds": "Clear Output after all sync queues are idle. Set false to retain logs, or a positive number of seconds.",
   "SyncTools.openFileSizeLimit": "Prompt for opening files larger than the specified size, default is 5 Mb",
   "SyncTools.uploadTaskNumber": "Use concurrent upload when the number of uploads exceeds the specified value, default is 10",
   "SyncTools.uploadConcurrentLimit": "Upload concurrency configuration: Minimum concurrency is 1, maximum is 100, default is 3",

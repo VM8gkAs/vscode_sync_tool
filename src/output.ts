@@ -71,6 +71,34 @@ let tasks: (string | Task)[] = [];
 let lastUpdateTime = 0;
 const updateInterval = 1000;
 let timeout: NodeJS.Timeout | undefined;
+let clearAfterIdleTimer: NodeJS.Timeout | undefined;
+
+function clearOutputClearTimer() {
+    if (!clearAfterIdleTimer) return;
+    clearTimeout(clearAfterIdleTimer);
+    clearAfterIdleTimer = undefined;
+}
+
+function getOutputClearAfterMilliseconds(): number | undefined {
+    const value = getPluginSetting().get<false | number>('outputClearAfterSeconds', false);
+    return typeof value === 'number' && Number.isFinite(value) && value > 0
+        ? value * 1000
+        : undefined;
+}
+
+export function cancelScheduledOutputClear() {
+    clearOutputClearTimer();
+}
+
+export function scheduleOutputClearWhenIdle(isIdle: () => boolean) {
+    clearOutputClearTimer();
+    const delay = getOutputClearAfterMilliseconds();
+    if (!delay || !isIdle()) return;
+    clearAfterIdleTimer = setTimeout(() => {
+        clearAfterIdleTimer = undefined;
+        if (isIdle()) cleanLogTask(true);
+    }, delay);
+}
 
 function throttledUpdateProgress(forceUpdate: boolean = false) {
     debounceShowLogPanel();
@@ -184,6 +212,7 @@ export function updateProgress(showAll: boolean = false) {
 }
 
 export function addLogTask(task: string | Task, config?: Pick<FileTransferConfigItem, 'workspaceRoot'>) {
+	clearOutputClearTimer();
     if (typeof task === 'string') {
         tasks.push(task);
         if (config) void writeSyncLogLine(config, task);
@@ -198,6 +227,7 @@ export function addLogTask(task: string | Task, config?: Pick<FileTransferConfig
 }
 
 export function cleanLogTask(isClear: boolean = false) {
+	clearOutputClearTimer();
     tasks = [];
     persistedTaskLines.clear();
     if (timeout) {

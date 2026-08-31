@@ -53,7 +53,7 @@ For non-trivial logic, leave the smallest runnable check: one focused test, an a
 - Main language: TypeScript.
 - Preserve the intent of `strict` and `noImplicitAny`; do not spread `any` to make errors disappear.
 - Prefer focused tests over manual-only validation.
-- Keep compatibility with `engines.vscode: ^1.82.0`.
+- Keep compatibility with the approved target `engines.vscode: ^1.101.0`; do not raise the minimum further without explicit user approval.
 - If user-visible strings, command titles, or package contributions change, update `package.nls*.json` and `l10n/bundle.l10n*.json`, then run the i18n check.
 - Path logic must handle Windows local paths and POSIX-style remote paths.
 
@@ -62,7 +62,7 @@ For non-trivial logic, leave the smallest runnable check: one focused test, an a
 P0 means correctness and reliability. Changes touching these areas must preserve the following:
 
 - Queue finalization: success, failure, cancellation, and stop paths must enter config/workspace-scoped finalize. Finalize must be idempotent and must not overwrite failure diagnostics.
-- Cache cleanup: terminal states must consistently clean watch cache, confirmed remote folder cache, pending folder checks, and update Tree View / Status Bar.
+- Cache cleanup: completed deployments clear watch cache; failed, cancelled, and stopped deployments retain retryable watch entries. Every terminal state must consistently clean confirmed remote folder cache and pending folder checks, and update Tree View / Status Bar.
 - Ignore semantics: upload and download must share compiled matcher semantics: normalization, negation, last-match-wins, and root-boundary protection.
 - Remote traversal: FTP/SFTP folder downloads must prune ignored subtrees before listing when no negation can restore descendants.
 - Multi-root: config, queue, connection pool, watch cache, debounce, Tree node, temp file, and `.gitignore` cache keys must include workspace scope. Never guess the first workspace root in multi-root mode.

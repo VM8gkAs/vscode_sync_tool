@@ -3,11 +3,11 @@
   "displayName": "FTP/SFTP/SSH Sync Tool",
   "publisher": "oorzc",
   "description": "%SyncTools.title%",
-  "version": "0.6.3",
+  "version": "0.7.0",
   "packageManager": "pnpm@10.34.4",
   "icon": "static/logo_new.png",
   "engines": {
-    "vscode": "^1.82.0"
+    "vscode": "^1.101.0"
   },
   "repository": {
     "type": "git",
@@ -32,6 +32,12 @@
   ],
   "main": "./dist/extension.js",
   "contributes": {
+    "jsonValidation": [
+      {
+        "fileMatch": "sync_config.jsonc",
+        "url": "./schemas/sync_config.schema.json"
+      }
+    ],
     "languages": [
       {
         "id": "Log",
@@ -461,6 +467,16 @@
           "default": 500,
           "description": "%SyncTools.logNumberLimit%"
         },
+        "SyncTools.outputClearAfterSeconds": {
+          "type": [
+            "boolean",
+            "number"
+          ],
+          "default": false,
+          "minimum": 0,
+          "scope": "window",
+          "description": "%SyncTools.outputClearAfterSeconds%"
+        },
         "SyncTools.openFileSizeLimit": {
           "type": "number",
           "default": 5,
@@ -499,9 +515,10 @@
     "pretest": "npm run typecheck",
     "test": "npm run test:compile && mocha \".test-out/tests/**/*.test.js\"",
     "test:compile": "tsc -p ./tsconfig.test.json",
-    "test:vscode:min": "node scripts/run-vscode-integration.cjs 1.82.0",
+    "test:vscode:min": "node scripts/run-vscode-integration.cjs 1.101.0",
     "test:vscode:stable": "node scripts/run-vscode-integration.cjs stable",
     "lint": "eslint \"src/**/*.ts\"",
+    "check:lifecycle": "node scripts/check-lifecycle-scripts.mjs",
     "commit": "npm run package &&  git add . && git commit -m 'up'",
     "major": "npm run commit && vsce publish major --no-dependencies",
     "minor": "npm run commit && vsce publish minor --no-dependencies",
@@ -513,20 +530,18 @@
     "@types/async": "^3.2.25",
     "@types/fs-extra": "^11.0.4",
     "@types/mocha": "^10.0.10",
-    "@types/node": "18.19.130",
+    "@types/node": "22.15.3",
     "@types/ssh2": "^1.15.5",
-    "@types/vscode": "1.82.0",
-    "@vscode/test-electron": "3.0.0",
+    "@types/vscode": "1.101.0",
     "@typescript-eslint/eslint-plugin": "8.61.1",
     "@typescript-eslint/parser": "8.61.1",
+    "@vscode/test-electron": "3.0.0",
     "eslint": "9.39.4",
-    "javascript-obfuscator": "5.4.3",
     "mocha": "11.7.6",
     "ts-loader": "^9.6.1",
     "typescript": "5.9.3",
     "webpack": "^5.107.2",
-    "webpack-cli": "7.0.3",
-    "webpack-obfuscator": "^3.6.1"
+    "webpack-cli": "7.0.3"
   },
   "dependencies": {
     "archiver": "^7.0.1",
@@ -546,6 +561,7 @@
     "promise-retry": "^2.0.1",
     "socks": "^2.8.9",
     "ssh2": "^1.17.0",
+    "ssh2-sftp-client": "12.1.1",
     "strip-json-comments": "^5.0.3",
     "uuid": "^11.1.1"
   }

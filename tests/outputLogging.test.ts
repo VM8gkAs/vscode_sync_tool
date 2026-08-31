@@ -29,6 +29,7 @@ describe('Output file logging', () => {
 		setConfigurationValue('logToFile', false);
 		setConfigurationValue('logDirectory', 'sync_logs');
 		setConfigurationValue('logNumberLimit', 500);
+		setConfigurationValue('outputClearAfterSeconds', false);
 		setConfigurationValue('gitignore', false);
 		setConfigurationValue('excludePath', []);
 		output.cleanLogTask(true);
@@ -130,5 +131,45 @@ describe('Output file logging', () => {
 			true
 		);
 		assert.strictEqual(matcher.isIgnored(path.join(workspaceRoot, 'src', 'index.ts')), false);
+	});
+
+	it('keeps Output by default and clears only after the configured idle delay', async () => {
+		output.addLogTask('[retained]');
+		output.updateProgress(true);
+		output.scheduleOutputClearWhenIdle(() => true);
+		await new Promise(resolve => setTimeout(resolve, 20));
+		assert.match(vscodeMockOutput.value, /retained/);
+
+		setConfigurationValue('outputClearAfterSeconds', 0.01);
+		output.scheduleOutputClearWhenIdle(() => true);
+		await new Promise(resolve => setTimeout(resolve, 30));
+		assert.strictEqual(vscodeMockOutput.value, '');
+	});
+
+	it('resets idle Output clearing for new logs and leaves file logs intact', async () => {
+		setConfigurationValue('outputClearAfterSeconds', 0.01);
+		setConfigurationValue('logToFile', true);
+		output.addLogTask('persisted', { workspaceRoot });
+		output.updateProgress(true);
+		output.scheduleOutputClearWhenIdle(() => true);
+		await new Promise(resolve => setTimeout(resolve, 5));
+		output.addLogTask('new work');
+		output.updateProgress(true);
+		await new Promise(resolve => setTimeout(resolve, 30));
+
+		assert.match(vscodeMockOutput.value, /new work/);
+		assert.strictEqual(
+			fs.readFileSync(path.join(workspaceRoot, 'sync_logs', output.SYNC_LOG_FILE_NAME), 'utf8'),
+			'persisted\n'
+		);
+	});
+
+	it('does not clear Output while another queue remains active', async () => {
+		setConfigurationValue('outputClearAfterSeconds', 0.01);
+		output.addLogTask('[active-queue]');
+		output.updateProgress(true);
+		output.scheduleOutputClearWhenIdle(() => false);
+		await new Promise(resolve => setTimeout(resolve, 30));
+		assert.match(vscodeMockOutput.value, /active-queue/);
 	});
 });

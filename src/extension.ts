@@ -15,6 +15,7 @@ import { MemFS } from "./FileProvider";
 import { cleanLogTask, outputChannel, updateProgress } from "./output";
 import { StatusBarUi } from "./statusBar";
 import { CodeLensProvider, handleEncryptionOrDecryption } from "./CodeLensProvider"
+import { ConfigDocumentationProvider } from "./config/documentation"
 import { clearWatchCache, flushAllWatchCacheUpdates, queueWatchCacheUpdate } from "./watchCache"
 
 const isDirectory = require("is-directory")
@@ -27,6 +28,8 @@ let TreeView: vscode.TreeView<vscode.TreeItem>
 let renamingFolderPrefixes: Set<string> = new Set();
 // 防止重命名时，会触发创建文件监听（精确匹配，用于单档重命名）
 let renamingFiles: Set<string> = new Set();
+// IDE delete/rename is already recorded by onWill*; suppress its later filesystem delete event.
+let anticipatedDeletePaths: Set<string> = new Set();
 // 防止保存时，会触发保存文件监听
 let saveFiles: Set<string> = new Set();
 // upload_on_save 延迟上传计时器（同一配置+同一路径只保留最后一次触发）
@@ -281,6 +284,7 @@ export async function activate(context: vscode.ExtensionContext) {
 
 	//代码透镜，在指定文字上方添加操作
 	CodeLensProvider(context)
+	ConfigDocumentationProvider(context)
 
 
 	// 注册文件变动监听
@@ -368,6 +372,26 @@ function isInRenamingFolder(fsPath: string): boolean {
 	return false;
 }
 
+function markAnticipatedDelete(fsPath: string): void {
+	anticipatedDeletePaths.add(fsPath);
+	setTimeout(() => anticipatedDeletePaths.delete(fsPath), 10000);
+}
+
+function isAnticipatedDelete(fsPath: string): boolean {
+	for (const deletedPath of anticipatedDeletePaths) {
+		if (fsPath === deletedPath || fsPath.startsWith(deletedPath + path.sep)) return true;
+	}
+	return false;
+}
+
+export function isRemoteVirtualDocumentUri(uri: vscode.Uri): boolean {
+	return uri.scheme === URI_SCHEME;
+}
+
+export function isRecordableWatchChange(file: string, operation: opType): boolean {
+	return operation.op === "delete" || fs.existsSync(file);
+}
+
 // 注册文件创建监听器
 function initFileEvents(context: vscode.ExtensionContext): void {
 	if (!getWorkspaceRoots().length) return
@@ -433,7 +457,12 @@ function initFileEvents(context: vscode.ExtensionContext): void {
 			saveChangeFile(context, uri.fsPath, opType)
 		}
 	});
-	// fileWatcher.onDidDelete((uri) => { });
+	context.subscriptions.push(
+		fileWatcher.onDidDelete((uri) => {
+			if (isAnticipatedDelete(uri.fsPath) || !getRootPath(uri.fsPath)) return;
+			saveChangeFile(context, uri.fsPath, { op: "delete", type: "file" });
+		})
+	);
 
 	// 注册添加文件的事件（已废弃，无法监听git拉取文件）
 	// context.subscriptions.push(
@@ -465,6 +494,7 @@ function initFileEvents(context: vscode.ExtensionContext): void {
 		vscode.workspace.onWillDeleteFiles(async (e) => {
 			for (const v of e.files) {
 				if (!getRootPath(v.fsPath)) continue
+				markAnticipatedDelete(v.fsPath)
 				if (fs.lstatSync(v.fsPath).isDirectory()) {
 					const opType: opType = {
 						op: "delete",
@@ -499,6 +529,7 @@ function initFileEvents(context: vscode.ExtensionContext): void {
 				if (!getRootPath(v.oldUri.fsPath)) continue
 
 				const isDir = isDirectory.sync(v.oldUri.fsPath);
+				markAnticipatedDelete(v.oldUri.fsPath)
 
 				// 记录将要被重命名的文件或文件夹
 				renamingFiles.add(v.newUri.fsPath);
@@ -584,7 +615,7 @@ async function saveChangeFile(
 	opType: opType
 ) {
 	// 去掉一些其他文件
-	if (!fs.existsSync(file)) {
+	if (!isRecordableWatchChange(file, opType)) {
 		return
 	}
 
@@ -666,7 +697,8 @@ let debounceSave = debounce(async (document) => {
 	}, 10000);
 
 	if (!rootPath) {
-		let pathArr = document.uri.fsPath.split(path.sep)
+		if (!isRemoteVirtualDocumentUri(document.uri)) return
+		let pathArr = document.uri.path.split('/')
 		if (pathArr.length < 3) return
 		let configScope = decodeURIComponent(pathArr[1])
 		let remotePath = pathArr.slice(3).join("/")

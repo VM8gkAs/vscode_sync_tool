@@ -37,6 +37,7 @@
   "SyncTools.excludePath.description": "Fichiers ou dossiers qui ne sont pas téléversés par défaut",
   "SyncTools.logShow": "Faut-il afficher en temps réel les journaux ? Par défaut, c'est true.",
   "SyncTools.logNumberLimit": "Limite du nombre de journaux. Par défaut, c'est 500 entrées. Une fois cette limite dépassée, les journaux sont automatiquement effacés.",
+  "SyncTools.outputClearAfterSeconds": "Efface la sortie lorsque toutes les files de synchronisation sont inactives. Utilisez false pour conserver les journaux ou un nombre positif de secondes.",
   "SyncTools.openFileSizeLimit": "Demande pour l'ouverture de fichiers en fonction de la taille. Par défaut, c'est 5 Mo.",
   "SyncTools.uploadTaskNumber": "Utiliser le téléversement concurrentiel lorsque le nombre de téléversements est supérieur à combien ? Par défaut, c'est 10.",
   "SyncTools.uploadConcurrentLimit": "Configuration du nombre de téléversements simultanés : le nombre minimum de connexions simultanées est de 1, le maximum est de 100. Par défaut, c'est 3.",

@@ -2,6 +2,8 @@
 
 > A tool for rapid code synchronization
 
+Requires VS Code 1.101 or later (Extension Host Node 22).
+
 [🔥 Download Link](https://marketplace.visualstudio.com/items?itemName=oorzc.ssh-tools)
 
 ## Supported Languages
@@ -53,6 +55,7 @@
 4. Output Logs
 
     - Output history remains available until you run **Sync Tools: Clear All Log**. The newest entries are retained according to `SyncTools.logNumberLimit`.
+	- To clear the in-memory Output only after every sync queue becomes idle, set `SyncTools.outputClearAfterSeconds` to a positive number. The default `false` keeps the existing retention behavior; `2.5` clears after 2.5 seconds. File logs are never deleted by this setting.
     - To persist the same information to disk, add these workspace settings:
 
       ```jsonc
@@ -69,6 +72,11 @@
     - **Compare File** always downloads a fresh remote copy and opens the VS Code diff editor with the local file on the left and the remote file on the right. Directories are not accepted.
 
 ### sync_config.jsonc Configuration Reference
+
+`sync_config.jsonc` is matched by the extension's bundled JSON schema. In VS Code,
+press **Ctrl+Space** inside an environment to list flags, and hover a flag to read
+documentation in the current VS Code language. German, Spanish, French, Italian, Japanese, Korean, Polish, Brazilian Portuguese, Russian, Turkish, Simplified Chinese, and Traditional Chinese are localized; English and unknown locales fall back to English. New configuration files no longer include the long
+commented reference block.
 
 ```jsonc
 {
@@ -173,6 +181,11 @@ Please configure authentication: [privateKeyPath] (preferred) or [password]
     "!aaa/bbb/ccc", // Do not exclude the ccc folder under aaa/bbb
 ]
 ```
+
+### SFTP Runtime
+
+- SFTP and SSH use the official fixed `ssh2-sftp-client` 12.1.1 dependency. Connection retries happen at the transfer-pool boundary, so each retry creates a fresh client (and fresh SOCKS proxy socket when configured).
+- Remote SSH commands used for timestamps and ZIP extraction reuse that client’s existing SSH connection; they do not bypass the connection limit with a second connection.
 
 ## Upload Demonstration
 

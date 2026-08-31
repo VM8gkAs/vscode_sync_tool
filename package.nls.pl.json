@@ -37,6 +37,7 @@
   "SyncTools.excludePath.description": "Domyślnie nie przesyłane pliki lub foldery",
   "SyncTools.logShow": "Czy logi powinny być wyświetlane w czasie rzeczywistym, domyślnie true",
   "SyncTools.logNumberLimit": "Limit liczby logów, domyślnie 500, po przekroczeniu limitu logi są automatycznie czyszczone",
+  "SyncTools.outputClearAfterSeconds": "Czyści dane wyjściowe, gdy wszystkie kolejki synchronizacji są bezczynne. Ustaw false, aby zachować logi, albo dodatnią liczbę sekund.",
   "SyncTools.openFileSizeLimit": "Pytanie o rozmiar pliku do otwarcia, domyślnie 5 Mb",
   "SyncTools.uploadTaskNumber": "Od jakiej liczby przesyłanych plików ma być używane przesyłanie współbieżne, domyślnie 10",
   "SyncTools.uploadConcurrentLimit": "Konfiguracja limitu współbieżności przesyłania: minimalna współbieżność to 1, maksymalna to 100, domyślnie 3",

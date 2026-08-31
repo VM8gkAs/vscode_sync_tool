@@ -37,6 +37,7 @@
   "SyncTools.excludePath.description": "預設不上傳的檔案或資料夾",
   "SyncTools.logShow": "是否需要即時顯示日誌，預設為true",
   "SyncTools.logNumberLimit": "日誌數量限制，預設為500條，超過後自動清空日誌",
+  "SyncTools.outputClearAfterSeconds": "所有同步佇列閒置後清除輸出。設為 false 保留日誌，或設為正秒數。",
   "SyncTools.openFileSizeLimit": "打開檔案大小詢問，預設為5 Mb",
   "SyncTools.uploadTaskNumber": "當上傳數量大於多少時使用並發上傳，預設為10",
   "SyncTools.uploadConcurrentLimit": "上傳並發量配置：並發量最小為1，最大為100，預設為3",

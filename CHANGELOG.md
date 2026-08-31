@@ -5,21 +5,35 @@
 - [繁體中文](docs/i18n/CHANGELOG.zh-TW.md)
 - [詳細變更追蹤（繁體中文）](docs/i18n/CHANGELOG_DETAIL.zh-TW.md)
 
-## Next Version
+## v0.7.0 (2026-09-01)
 
 ### Added
+- Added a bundled JSON schema and localized `sync_config.jsonc` completion/hover documentation for de/es/fr/it/ja/ko/pl/pt-br/ru/tr/zh-cn/zh-tw; English and unknown locales fall back to English instead of generated reference comments.
+- Added `SyncTools.outputClearAfterSeconds` as an optional window-scoped idle Output clear; `false` remains the default and file logs are retained.
+- Added a CI policy gate that rejects root install lifecycle scripts, matching hidden lifecycle files, and scripts that execute `node -e` or `eval`.
+- Added focused tests for cryptographic secrets, virtual-document save boundaries, idle Output clearing, and the SSH command adapter’s stream cleanup.
 - Added `SyncTools.configStorePath` plus commands to select or reset an external `sync_config.jsonc` directory. Multi-root workspaces use stable `<project>-<hash>` directories, same-name projects remain isolated, and existing target files are never overwritten.
 - Added focused coverage for external-path validation, project-root migration fallback, same-name workspace isolation, external configuration loading without `.gitignore` mutation, and relocation rollback after an I/O failure.
 - Added **Extract Remote ZIP** to SSH ZIP file context menus. Extraction requires the remote `unzip` command, confirms possible overwrites, quotes POSIX shell arguments, and rejects absolute, drive-qualified, or parent-traversal archive entries.
 - Added focused P3 coverage for drag/drop cancellation, cross-workspace moves, overwrite prevention, remote extraction, terminal status publication, and fresh local-to-remote comparisons.
 
 ### Changed
+- Raised the minimum VS Code version to 1.101 and aligned `@types/vscode`, `@types/node`, and minimum Extension Host testing with the Node 22 baseline.
+- Replaced the vendored SFTP client with fixed official `ssh2-sftp-client` 12.1.1. Initial connection retry now creates a fresh client and proxy socket each attempt; SSH commands reuse the leased library connection through one local adapter.
+- Removed production obfuscation and its dependencies after A/B builds reduced the bundle from 7,328,573 to 1,156,461 bytes and webpack time from 58,176 ms to 9,403 ms.
 - Removed the encrypted extension expiration gate; extension activation no longer stops at a hard-coded date.
 - Adapted the upstream external-config idea to the current multi-root and cache model instead of importing upstream generated files, repository agent rules, or vendored SFTP changes.
 - Configuration relocation now rolls back staged copies and reports a localized error if copying or updating the global setting fails, so an I/O error does not abort extension activation.
 - Hardened Tree drag/drop and remote moves with POSIX remote paths, cancellation, same-connection validation, self-move rejection, destination collision checks, and exactly-once client release.
 - Localized failed, cancelled, and stopped terminal states across the Tree View and Status Bar.
 - File comparison now rejects directories, always refreshes the remote copy, waits for the diff command, and consistently displays local on the left and remote on the right.
+
+### Fixed
+- Adapted `privateKeyPath` to official `ssh2-sftp-client` 12.1.1 by loading the configured key file into the supported `privateKey` connection option; invalid directories no longer pass private-key validation.
+- Failed, cancelled, and stopped watch deployments now retain pending cache entries for retry; only completed deployments clear the watch cache.
+- Deployment-stage connection errors are now retained in workspace file logs instead of appearing only as transient notifications.
+- JSONC hover shows one runtime-localized flag description; English schema comments remain validation metadata without adding a duplicate hover.
+- Renames performed outside the IDE now enqueue deletion of the vanished source path as well as upload of the new path, preventing stale remote directories; IDE renames still use the direct remote rename operation.
 
 ## v0.6.3 (2026-07-17)
 

@@ -103,6 +103,7 @@ export class Deploy {
 				}
 			}
 		} catch (err) {
+			this.showLog(this.config, 'connect', 'error', err?.toString());
 			if (!(err instanceof ClientConnectionError)) {
 				const msg = `[${this.label}][${this.config.type}][error]`;
 				vscode.window.showErrorMessage(`${msg}: ${err?.toString()}`);

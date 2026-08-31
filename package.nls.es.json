@@ -37,6 +37,7 @@
     "SyncTools.excludePath.description": "Archivos o carpetas que no se suben por defecto",
     "SyncTools.logShow": "¿Mostrar registros en tiempo real? Valor predeterminado: true",
     "SyncTools.logNumberLimit": "Límite de número de registros. Valor predeterminado: 500. Los registros se borrarán automáticamente cuando se supere el límite.",
+    "SyncTools.outputClearAfterSeconds": "Borra la salida cuando todas las colas de sincronización estén inactivas. Usa false para conservar los registros o un número positivo de segundos.",
     "SyncTools.openFileSizeLimit": "Preguntar al abrir archivos mayores que el tamaño especificado. Valor predeterminado: 5 Mb",
     "SyncTools.uploadTaskNumber": "Utilizar subida concurrente cuando el número de subidas supere el valor especificado. Valor predeterminado: 10",
     "SyncTools.uploadConcurrentLimit": "Configuración de concurrencia de subida: Concurrencia mínima: 1, máxima: 100. Valor predeterminado: 3",

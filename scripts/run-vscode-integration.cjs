@@ -2,7 +2,7 @@ const path = require('node:path');
 const { runTests } = require('@vscode/test-electron');
 
 async function main() {
-	const version = process.argv[2] || '1.82.0';
+	const version = process.argv[2] || '1.101.0';
 	const extensionDevelopmentPath = path.resolve(__dirname, '..');
 	const extensionTestsPath = path.resolve(__dirname, 'vscode-integration-suite.cjs');
 

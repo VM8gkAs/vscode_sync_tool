@@ -39,7 +39,6 @@ export interface SFTPClientType {
     ): Promise<string>;
     fastPut(localPath: string, remoteFilePath: string, options?: SFTPFastPutTransferOptions): Promise<string>;
     cwd(): Promise<string>;
-    exec(command: string, options?: Record<string, unknown>, addListeners?: boolean): Promise<SSHExecCommandResponse>;
     mkdir(remoteFilePath: string, recursive?: boolean): Promise<string>;
     rmdir(remoteFilePath: string, recursive?: boolean): Promise<string>;
     delete(remoteFilePath: string, noErrorOK?: boolean): Promise<string>;

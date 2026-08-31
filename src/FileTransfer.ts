@@ -1,6 +1,10 @@
-const SftpClient = require("./lib/ssh2-sftp-client/index")
+const SftpClient = require("ssh2-sftp-client")
 const ftp = require("basic-ftp-proxy")
 const proxySocket = require("basic-ftp-proxy/dist/proxySocket")
+const promiseRetry = require("promise-retry") as (
+    options: { retries: number; factor: number; minTimeout: number },
+    operation: (retry: (error: unknown) => never, attempt: number) => Promise<void>
+) => Promise<void>;
 
 import fs from "fs-extra"
 import path from 'path';
@@ -15,7 +19,7 @@ import { SocksClient } from "socks";
 import { SocksProxyType } from "socks/typings/common/constants";
 import { getContext } from "./config/globals";
 import { Mutex } from 'async-mutex';
-import { addLogTask, updateTaskProgress } from './output';
+import { addLogTask, cancelScheduledOutputClear, scheduleOutputClearWhenIdle, updateTaskProgress } from './output';
 import { ClientConnectionError } from './types/connect';
 import { myEvent } from './events/myEvent';
 import { StatusBarUi } from './statusBar';
@@ -23,6 +27,8 @@ import { getDecryptionCode } from "./CodeLensProvider";
 import { cloneTask } from "./task";
 import { FileTransferClient, FTPClientType, FTPProgressHandler, FTPRemoteFileInfo, isFTPClient, isSFTPClient, SFTPClientType } from "./types/client";
 import { clearWatchCache } from "./watchCache";
+import { execSftpCommand } from './sftpCommand';
+import { applySftpPrivateKey, SftpRuntimeConnectionConfig } from './sftpConnection';
 
 EventEmitter.setMaxListeners(99999)
 
@@ -356,7 +362,7 @@ export default class FileTransfer extends EventEmitter {
         try {
             this.existCreateDir[scopeKey]?.clear();
             this.existCreateDirPending[scopeKey]?.clear();
-            if (configItem.watch) {
+            if (configItem.watch && terminalState === 'completed') {
                 await this.clearCache(configItem);
             }
         } catch (err) {
@@ -380,6 +386,8 @@ export default class FileTransfer extends EventEmitter {
             if (cleanupError) {
 				oConsole.error(`[${configItem.name}][queue:cleanup][error] ${cleanupError}`);
             }
+
+            scheduleOutputClearWhenIdle(() => this.checkAllTaskCompleted());
 
         }
     }
@@ -462,6 +470,68 @@ export default class FileTransfer extends EventEmitter {
         }
     }
 
+    private async createSftpClientWithRetry(config: FileTransferConfigItem): Promise<SFTPClientType> {
+        let connectedClient: SFTPClientType | undefined;
+        await promiseRetry({
+            retries: config.retries ?? 1,
+            factor: config.retry_factor ?? 2,
+            minTimeout: config.retry_minTimeout ?? 25000,
+        }, async (retry) => {
+            let attemptClient: SFTPClientType | undefined;
+            let attemptSocket: { destroy?: () => void } | undefined;
+            try {
+                const { sock: _existingSocket, ...configWithoutSocket } = config;
+                const configClone: SftpRuntimeConnectionConfig = { ...configWithoutSocket };
+                if (configClone.proxy) {
+                    const proxyConfig = getPluginSetting().get<proxyConfigType>("proxyConfig");
+                    if (!proxyConfig || (!proxyConfig.proxyHost || !proxyConfig.proxyPort || ![4, 5].includes(proxyConfig.proxyType as SocksProxyType))) {
+                        throw new Error(l10n.t('Please check if the proxy configuration is correct'));
+                    }
+                    try {
+                        const { socket } = await SocksClient.createConnection({
+                            proxy: {
+                                host: proxyConfig.proxyHost,
+                                port: proxyConfig.proxyPort,
+                                userId: proxyConfig.proxyUsername,
+                                password: proxyConfig.proxyPassword,
+                                type: proxyConfig.proxyType as SocksProxyType,
+                            },
+                            command: "connect",
+                            timeout: 10000,
+                            destination: { host: configClone.host, port: configClone.port },
+                        });
+                        attemptSocket = socket;
+                        configClone.sock = socket;
+                    } catch (err) {
+                        throw new Error(l10n.t('Proxy connection failed, please check configuration:') + String(err));
+                    }
+                }
+
+                if (configClone.secretKeyPath && fs.existsSync(configClone.secretKeyPath)) {
+                    const secretKey = fs.readFileSync(configClone.secretKeyPath, 'utf-8');
+                    configClone.username = getDecryptionCode(configClone.username, secretKey) || configClone.username;
+                    configClone.password = getDecryptionCode(configClone.password, secretKey) || configClone.password;
+                }
+                applySftpPrivateKey(configClone);
+
+                attemptClient = new SftpClient() as SFTPClientType;
+                await attemptClient.connect(configClone);
+                connectedClient = attemptClient;
+            } catch (err) {
+                if (attemptClient) {
+                    try {
+                        await attemptClient.end();
+                    } catch { /* already closed or broken, safe to ignore */ }
+                } else {
+                    attemptSocket?.destroy?.();
+                }
+                return retry(err);
+            }
+        });
+        if (!connectedClient) throw new Error('SFTP connection did not produce a client');
+        return connectedClient;
+    }
+
     // 获取连接
     async getClient(config: FileTransferConfigItem, showErr?: boolean, waitForLease?: true): Promise<FileTransferClient>;
     async getClient(config: FileTransferConfigItem, showErr: boolean, waitForLease: false): Promise<FileTransferClient | undefined>;
@@ -486,6 +556,9 @@ export default class FileTransfer extends EventEmitter {
 
         if (!client) {
             try {
+                if (config.type !== 'ftp') {
+                    client = await this.createSftpClientWithRetry(config);
+                } else {
                 const { sock: _existingSocket, ...configWithoutSocket } = config;
                 const configClone: FileTransferConfigItem = { ...configWithoutSocket };
                 // 如果需要代理，通过 SocksClient 创建 socket
@@ -558,10 +631,7 @@ export default class FileTransfer extends EventEmitter {
                     // client.ftp.verbose = true;
                 }
 
-                if (configClone.type === 'ftp') {
                     await (client as FTPClientType).access(configClone);
-                } else {
-                    await (client as SFTPClientType).connect(configClone);
                 }
             } catch (err) {
                 // 清理连接防止内存泄漏
@@ -997,7 +1067,7 @@ export default class FileTransfer extends EventEmitter {
             // Fallback: exec touch via SSH channel
             const epochSeconds = Math.floor(targetTime.getTime() / 1000);
             const escapedPath = remotePath.replace(/'/g, `'"'"'`);
-            await sftpClient.exec(`touch -m -d @${epochSeconds} '${escapedPath}'`);
+            await execSftpCommand(sftpClient, `touch -m -d @${epochSeconds} '${escapedPath}'`);
             return;
         }
 
@@ -1006,7 +1076,7 @@ export default class FileTransfer extends EventEmitter {
             const sftpClient = client as SFTPClientType;
             const epochSeconds = Math.floor(targetTime.getTime() / 1000);
             const escapedPath = remotePath.replace(/'/g, `'"'"'`);
-            await sftpClient.exec(`touch -m -d @${epochSeconds} '${escapedPath}'`);
+            await execSftpCommand(sftpClient, `touch -m -d @${epochSeconds} '${escapedPath}'`);
         }
     }
 
@@ -1031,7 +1101,7 @@ export default class FileTransfer extends EventEmitter {
 
             if (config.type === 'ssh' || config.type === 'sftp') {
                 const escapedPath = remotePath.replace(/'/g, `'"'"'`);
-                const result = await sftpClient.exec(`stat -c %Y '${escapedPath}'`);
+                const result = await execSftpCommand(sftpClient, `stat -c %Y '${escapedPath}'`);
                 const epoch = Number((result?.stdout || '').toString().trim());
                 if (!Number.isNaN(epoch) && epoch > 0) {
                     return new Date(epoch * 1000);
@@ -1113,12 +1183,12 @@ export default class FileTransfer extends EventEmitter {
             throw new Error(l10n.t('Only SSH ZIP files can be extracted remotely.'));
         }
 
-        const availability = await client.exec('command -v unzip >/dev/null 2>&1');
+        const availability = await execSftpCommand(client, 'command -v unzip >/dev/null 2>&1');
         if (availability.code !== 0) {
             throw new Error(l10n.t('Remote server does not provide the unzip command.'));
         }
 
-        const listing = await client.exec(buildRemoteZipListCommand(normalizedArchivePath));
+        const listing = await execSftpCommand(client, buildRemoteZipListCommand(normalizedArchivePath));
         if (listing.code !== 0) {
             const detail = (listing.stderr || listing.stdout || `exit ${listing.code}`).trim();
             throw new Error(`${l10n.t('Decompression failed')}: ${detail}`);
@@ -1128,7 +1198,7 @@ export default class FileTransfer extends EventEmitter {
             throw new Error(l10n.t('ZIP archive contains an unsafe path: {0}', unsafeEntry));
         }
 
-        const result = await client.exec(buildRemoteUnzipCommand(normalizedArchivePath, destinationPath));
+        const result = await execSftpCommand(client, buildRemoteUnzipCommand(normalizedArchivePath, destinationPath));
         if (result.code !== 0) {
             const detail = (result.stderr || result.stdout || `exit ${result.code}`).trim();
             oConsole.error(`${l10n.t('Decompression failed')}: ${normalizedArchivePath} ${detail}`);
@@ -1750,6 +1820,7 @@ export default class FileTransfer extends EventEmitter {
 
         for (const [scopeKey, scopedTasks] of groupedTasks) {
             if (!scopedTasks.length) continue
+			cancelScheduledOutputClear();
             const config = scopedTasks[0].config
             if (!FileTransfer.queues[scopeKey]) {
                 new FileTransfer(config)

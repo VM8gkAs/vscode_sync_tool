@@ -37,6 +37,7 @@
   "SyncTools.excludePath.description": "Arquivos ou pastas que não são enviados por padrão",
   "SyncTools.logShow": "Se é necessário exibir os logs em tempo real. O padrão é true.",
   "SyncTools.logNumberLimit": "Limite do número de logs. O padrão é 500 registros. Após ultrapassar esse limite, os logs são automaticamente limpos.",
+  "SyncTools.outputClearAfterSeconds": "Limpa a saída quando todas as filas de sincronização estiverem ociosas. Defina false para manter os logs ou um número positivo de segundos.",
   "SyncTools.openFileSizeLimit": "Confirmação do tamanho do arquivo ao abri-lo. O padrão é 5 Mb.",
   "SyncTools.uploadTaskNumber": "Quando o número de envios for maior do que quantos para usar o envio concorrente. O padrão é 10.",
   "SyncTools.uploadConcurrentLimit": "Configuração do limite de concorrência de envio: o limite mínimo de concorrência é 1, o máximo é 100, e o padrão é 3.",

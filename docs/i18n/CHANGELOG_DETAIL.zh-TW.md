@@ -2,7 +2,16 @@
 
 > 用於記錄每次版本的詳細改動，便於後續追蹤、回溯與驗證。
 
-## 下一版本
+## v0.7.0（2026-09-01）
+
+### 2026-08-31 真實 SFTP 私鑰 smoke 修正
+- **實測範圍**：在 CWISE 工作區啟用 `sync_logs`；`tools/**` 內 41-byte 檔案未進入 queue，工作區根目錄 46-byte 檔案與 39-byte 資料夾檔案均完成真實 SFTP 上傳。
+- **SFTP 12 私鑰相容性**：初次連線在有效私鑰檔下仍回報 authentication failed；根因是官方 v12 接受 `privateKey` 內容而非舊版 `privateKeyPath` 自訂欄位。現在連線前讀取檔案為 Buffer，並補聚焦測試。
+- **失敗重試語意**：連線失敗不再清空 watch cache；`failed`／`cancelled`／`stopped` 保留待上傳項目，只有 `completed` 清除。
+- **持久化診斷**：部署階段連線錯誤會寫入 `sync-tools.log`，避免只存在於短暫通知。
+- **JSONC 說明**：schema 的英文內容改為不參與 hover 的 `$comment`，UI 只保留 extension 依 IDE 語系提供的一份動態說明。
+- **改名回歸**：IDE 內資料夾改名仍以遠端 `rename` 完成；PowerShell／檔案總管／Git 等外部改名改為「刪除舊遠端路徑＋上傳新路徑」。唯讀 SFTP 查驗確認舊路徑不存在、新目錄與檔案存在。
+- **驗證與封裝**：114 tests、strict typecheck、i18n、lint error gate、lifecycle gate、production build、production audit（0 vulnerabilities）、VS Code 1.101／Stable 1.135.0 Extension Host 均通過；正式 `ssh-tools-0.7.0.vsix` 為 59 files／538,588 bytes，SHA-256 `D079C88C529D4AFBF94CABA7519D051252D35AD3D384598EEA96CADA1461B13B`。
 
 ### 2026-08-30 P3-1～P3-5 完成
 - **拖曳與遠端移動**：本機拖曳支援 LF／CRLF URI 清單、取消與 POSIX 遠端路徑；遠端節點移動限制同一 config/workspace scope，禁止資料夾移入自身，不覆寫既有目的地，並保證 client 只釋放一次。

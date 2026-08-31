@@ -37,6 +37,7 @@
   "SyncTools.excludePath.description": "File o cartelle che non vengono caricati di default",
   "SyncTools.logShow": "Mostrare i log in tempo reale? Di default è true.",
   "SyncTools.logNumberLimit": "Limite del numero di log. Di default sono 500 voci. Una volta superato questo limite, i log vengono cancellati automaticamente.",
+  "SyncTools.outputClearAfterSeconds": "Cancella l'output quando tutte le code di sincronizzazione sono inattive. Imposta false per conservare i log oppure un numero positivo di secondi.",
   "SyncTools.openFileSizeLimit": "Richiesta per l'apertura di file in base alla dimensione. Di default è 5 MB.",
   "SyncTools.uploadTaskNumber": "Utilizzare il caricamento concorrente quando il numero di caricamenti è maggiore di quanto? Di default è 10.",
   "SyncTools.uploadConcurrentLimit": "Configurazione del numero di caricamenti simultanei: il numero minimo di connessioni simultanee è 1, il massimo è 100. Di default è 3.",

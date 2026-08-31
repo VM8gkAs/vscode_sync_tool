@@ -37,6 +37,7 @@
   "SyncTools.excludePath.description": "Standardmäßig werden diese Dateien oder Ordner nicht hochgeladen",
   "SyncTools.logShow": "Sollen die Protokolle in Echtzeit angezeigt werden? Standardmäßig ist dies true.",
   "SyncTools.logNumberLimit": "Begrenzung der Anzahl der Protokolleinträge. Standardmäßig sind es 500 Einträge. Überschreitet die Anzahl diesen Wert, werden die Protokolle automatisch gelöscht.",
+  "SyncTools.outputClearAfterSeconds": "Ausgabe löschen, nachdem alle Synchronisierungswarteschlangen inaktiv sind. false behält Protokolle bei; alternativ eine positive Sekundenzahl.",
   "SyncTools.openFileSizeLimit": "Abfrage bei der Öffnung von Dateien basierend auf der Größe. Standardmäßig ist dies 5 MB.",
   "SyncTools.uploadTaskNumber": "Ab wie vielen Hochladungen soll die parallele Hochladung verwendet werden? Standardmäßig ist dies 10.",
   "SyncTools.uploadConcurrentLimit": "Konfiguration der Anzahl paralleler Hochladungen: Die Mindestanzahl paralleler Verbindungen ist 1, die Höchstanzahl ist 100. Standardmäßig ist dies 3.",

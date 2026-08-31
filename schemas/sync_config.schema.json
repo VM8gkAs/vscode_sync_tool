@@ -1,0 +1,213 @@
+{
+  "$schema": "http://json-schema.org/draft-07/schema#",
+  "title": "Sync Tools configuration",
+  "description": "Named FTP, SFTP, or SSH connection environments.",
+  "type": "object",
+  "patternProperties": {
+    "^[^\\s].*$": {
+      "$ref": "#/definitions/environment"
+    }
+  },
+  "additionalProperties": false,
+  "definitions": {
+    "environment": {
+      "type": "object",
+      "description": "A named remote connection environment.",
+      "additionalProperties": true,
+      "patternProperties": {
+        "^type$": {
+          "type": "string",
+          "enum": [
+            "ftp",
+            "sftp",
+            "ssh"
+          ],
+          "$comment": "Required connection type."
+        },
+        "^host$": {
+          "type": "string",
+          "$comment": "Required server host name or IP address."
+        },
+        "^port$": {
+          "type": "number",
+          "$comment": "Connection port; FTP defaults to 21 and SFTP/SSH default to 22."
+        },
+        "^user$": {
+          "type": "string",
+          "$comment": "FTP login user name (legacy alias)."
+        },
+        "^username$": {
+          "type": "string",
+          "$comment": "Login user name."
+        },
+        "^password$": {
+          "type": "string",
+          "$comment": "Login password. Use either this or privateKeyPath for SSH/SFTP authentication."
+        },
+        "^privateKeyPath$": {
+          "type": "string",
+          "$comment": "Private-key file path for SSH/SFTP authentication. Use either this or password."
+        },
+        "^secretKeyPath$": {
+          "type": "string",
+          "$comment": "Encryption-key file path used by the Encrypt and Decrypt commands."
+        },
+        "^proxy$": {
+          "type": "boolean",
+          "$comment": "Use the extension's configured proxy. Defaults to false."
+        },
+        "^retries$": {
+          "type": "number",
+          "minimum": 0,
+          "$comment": "Number of initial SFTP connection retries. Defaults to 1."
+        },
+        "^retry_factor$": {
+          "type": "number",
+          "minimum": 1,
+          "$comment": "Backoff multiplier for initial SFTP connection retries. Defaults to 2."
+        },
+        "^retry_minTimeout$": {
+          "type": "number",
+          "minimum": 0,
+          "$comment": "Minimum retry delay in milliseconds for initial SFTP connections. Defaults to 25000."
+        },
+        "^upload_on_save$": {
+          "type": "boolean",
+          "$comment": "Upload a file immediately after save. When enabled, watch, submit_git_before_upload, compress, and deleteRemote are ignored."
+        },
+        "^watch$": {
+          "type": "boolean",
+          "$comment": "Watch upload paths for changes. Ignored when upload_on_save is true."
+        },
+        "^submit_git_before_upload$": {
+          "type": "boolean",
+          "$comment": "Commit and push local Git changes before upload to reduce accidental remote overwrites."
+        },
+        "^submit_git_msg$": {
+          "type": "string",
+          "$comment": "Git commit message used when submit_git_before_upload is enabled; an empty value prompts for one."
+        },
+        "^build$": {
+          "type": "string",
+          "$comment": "Local build command to run before deployment. It is not run in an untrusted workspace."
+        },
+        "^compress$": {
+          "type": "boolean",
+          "$comment": "Upload a compressed archive instead of individual files. Defaults to false."
+        },
+        "^remote_unpacked$": {
+          "type": "boolean",
+          "$comment": "Unpack a compressed upload on the remote host. Defaults to true for SSH and false otherwise."
+        },
+        "^delete_remote_compress$": {
+          "type": "boolean",
+          "$comment": "Delete the uploaded remote archive after extraction. Defaults to true for SSH and false otherwise."
+        },
+        "^delete_local_compress$": {
+          "type": "boolean",
+          "$comment": "Delete the temporary local archive after a compressed upload. Defaults to true for SSH and false otherwise."
+        },
+        "^distPath$": {
+          "oneOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "array",
+              "items": {
+                "type": "string"
+              }
+            }
+          ],
+          "$comment": "Local path or paths to upload. The workspace root is used when omitted."
+        },
+        "^upload_to_root$": {
+          "type": "boolean",
+          "$comment": "When distPath has one directory, upload its contents directly to remotePath."
+        },
+        "^deleteRemote$": {
+          "type": "boolean",
+          "$comment": "Delete the remote distPath target before uploading. Defaults to false."
+        },
+        "^syncFileTime$": {
+          "type": "boolean",
+          "$comment": "Set the remote file timestamp to the local file timestamp after upload. Defaults to false."
+        },
+        "^skipIfSame$": {
+          "type": "boolean",
+          "$comment": "Compare remote files before upload and skip identical files. Defaults to true."
+        },
+        "^skipIfSameSize$": {
+          "type": "boolean",
+          "$comment": "Deprecated compatibility alias for skipIfSame."
+        },
+        "^skipCompareMode$": {
+          "type": "string",
+          "enum": [
+            "size+mtime",
+            "size",
+            "mtime"
+          ],
+          "$comment": "Comparison used by skipIfSame. Defaults to size+mtime."
+        },
+        "^uploadDelay$": {
+          "type": "number",
+          "minimum": 0,
+          "$comment": "Seconds to wait after the last change before an upload_on_save upload. Defaults to 0."
+        },
+        "^remotePath$": {
+          "type": "string",
+          "$comment": "Remote target directory for SFTP and SSH uploads."
+        },
+        "^excludePath$": {
+          "oneOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "array",
+              "items": {
+                "type": "string"
+              }
+            }
+          ],
+          "$comment": "Upload exclusions for this environment, merged with extension exclusions and .gitignore when enabled."
+        },
+        "^downloadPath$": {
+          "type": "string",
+          "$comment": "Local destination for manual downloads. The workspace root is used when omitted."
+        },
+        "^downloadExcludePath$": {
+          "oneOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "array",
+              "items": {
+                "type": "string"
+              }
+            }
+          ],
+          "$comment": "Files and directories to exclude from downloads."
+        },
+        "^localTraversalConcurrency$": {
+          "type": "number",
+          "minimum": 1,
+          "maximum": 16,
+          "$comment": "Concurrent local directory scans. Set 1 for serial asynchronous I/O; defaults to 4."
+        },
+        "^downloadTraversalConcurrency$": {
+          "type": "number",
+          "minimum": 1,
+          "maximum": 16,
+          "$comment": "Concurrent remote directory scans. Set 1 for serial traversal; defaults to 2."
+        },
+        "^default$": {
+          "type": "boolean",
+          "$comment": "Use this environment for quick Explorer upload and remote comparison actions. Defaults to false."
+        }
+      }
+    }
+  }
+}

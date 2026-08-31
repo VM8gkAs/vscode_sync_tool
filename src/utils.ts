@@ -14,7 +14,7 @@ import { Minimatch } from "minimatch"
 import { getContext } from "./config/globals"
 import dayjs = require("dayjs")
 import { execFile } from "child_process"
-import { createHash } from "crypto"
+import { createHash, randomBytes } from "crypto"
 import { CONFIG_FILENAME } from "./config/config"
 
 
@@ -1122,7 +1122,14 @@ export const verityConfig = async (config: DeployConfigItem) => {
 	}
 	const hasPassword = Boolean(password)
 	const hasPrivateKeyPath = Boolean(privateKeyPath)
-	const privateKeyExists = hasPrivateKeyPath ? fs.existsSync(privateKeyPath as string) : false
+	let privateKeyExists = false
+	if (hasPrivateKeyPath) {
+		try {
+			privateKeyExists = fs.statSync(privateKeyPath as string).isFile()
+		} catch {
+			privateKeyExists = false
+		}
+	}
 
 	if (type == 'ftp' && !password) {
 		throw new Error(l10n.t('FTP only supports password authentication. Please configure [password]'))
@@ -1386,9 +1393,15 @@ export function posixRelative(from: string, to: string): string {
 // 生成随机密码字符串的函数
 export function generateRandomPassword(length: number) {
 	const chars = 'ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789';
+	if (!Number.isFinite(length) || length <= 0) return '';
+	const targetLength = Math.floor(length);
 	let result = '';
-	for (let i = 0; i < length; i++) {
-		result += chars.charAt(Math.floor(Math.random() * chars.length));
+	while (result.length < targetLength) {
+		const bytes = randomBytes(Math.ceil((targetLength - result.length) * 256 / 248));
+		for (const byte of bytes) {
+			if (byte < 248) result += chars.charAt(byte % chars.length);
+			if (result.length === targetLength) break;
+		}
 	}
 	return result;
 }

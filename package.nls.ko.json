@@ -37,6 +37,7 @@
   "SyncTools.excludePath.description": "기본적으로 업로드하지 않는 파일 또는 폴더",
   "SyncTools.logShow": "로그를 실시간으로 표시할지 여부. 기본값은 true입니다.",
   "SyncTools.logNumberLimit": "로그 수 제한. 기본값은 500개이며, 이를 초과하면 자동으로 로그가 비워집니다.",
+  "SyncTools.outputClearAfterSeconds": "모든 동기화 큐가 유휴 상태가 된 뒤 출력을 지웁니다. 로그를 유지하려면 false 또는 양의 초 수를 설정하세요.",
   "SyncTools.openFileSizeLimit": "파일 열기 크기 확인. 기본값은 5 Mb입니다.",
   "SyncTools.uploadTaskNumber": "업로드 수가 몇 개 이상일 때 병렬 업로드를 사용할지 여부. 기본값은 10입니다.",
   "SyncTools.uploadConcurrentLimit": "업로드 병렬 처리 제한: 병렬 처리 수는 최소 1, 최대 100이며, 기본값은 3입니다.",
